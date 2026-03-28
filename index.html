@@ -1173,7 +1173,7 @@ function updatePayoff() {
   if (creditLabel) html += costRow(creditLabel, `\u2212${fmtRange(creditLow, creditHigh)}`, 'indent credit');
   html += `<tr class="total-row"><td><strong>Net cost</strong></td><td>${fmtRange(fullNetLow, fullNetHigh)}</td></tr>`;
   html += '</table>';
-  html += renderPayback(fullNetMid, fullNetLow, fullNetHigh, r.savingsHP, 'vs gas-only');
+  html += renderPayback(fullNetMid, fullNetLow, fullNetHigh, r.savingsHP, 'vs gas-only', 'heat pump');
 
   // === Hybrid Add-on ===
   html += '<h4 style="margin:24px 0 8px;font-size:0.95rem">Scenario B: Hybrid Add-On</h4>';
@@ -1189,14 +1189,14 @@ function updatePayoff() {
   if (hybridCreditLabel) html += costRow(hybridCreditLabel, `\u2212${fmtRange(hybridCreditLow, hybridCreditHigh)}`, 'indent credit');
   html += `<tr class="total-row"><td><strong>Net cost</strong></td><td>${fmtRange(hybridNetLow, hybridNetHigh)}</td></tr>`;
   html += '</table>';
-  html += renderPayback(hybridNetMid, hybridNetLow, hybridNetHigh, r.savingsHybrid, 'vs gas-only');
+  html += renderPayback(hybridNetMid, hybridNetLow, hybridNetHigh, r.savingsHybrid, 'vs gas-only', 'hybrid');
 
   html += '<p style="font-size:0.8rem;color:var(--muted);margin-top:16px">Check your state/utility for current rebates and incentives — these change frequently and can significantly reduce net cost.</p>';
 
   out.innerHTML = html;
 }
 
-function renderPayback(netMid, netLow, netHigh, annualSavings, vsLabel) {
+function renderPayback(netMid, netLow, netHigh, annualSavings, vsLabel, scenarioName) {
   let html = '<div style="margin-top:12px">';
   if (annualSavings > 25) {
     const yearsLow = Math.max(0, netLow / annualSavings);
@@ -1217,7 +1217,7 @@ function renderPayback(netMid, netLow, netHigh, annualSavings, vsLabel) {
   } else if (annualSavings > -25) {
     html += `<p style="font-size:0.85rem;color:var(--muted)">Operating costs are roughly equal ${vsLabel}. Payback depends on available rebates and cooling value.</p>`;
   } else {
-    html += `<p style="font-size:0.85rem;color:var(--muted)">Gas is ${fmt(Math.abs(annualSavings))}/yr cheaper ${vsLabel}. Value comes from cooling and non-economic factors.</p>`;
+    html += `<p style="font-size:0.85rem;color:var(--muted)">Gas is ${fmt(Math.abs(annualSavings))}/yr cheaper than ${scenarioName}. Value comes from cooling and non-economic factors.</p>`;
   }
   html += '</div>';
   return html;
