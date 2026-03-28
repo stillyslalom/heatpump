@@ -1,0 +1,1146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Heat Pump vs Gas Furnace Calculator</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --gas: #e97319; --gas-bg: #fff7ed; --gas-border: #fed7aa;
+  --hp: #0d9488; --hp-bg: #f0fdfa; --hp-border: #99f6e4;
+  --save: #16a34a; --save-bg: #f0fdf4;
+  --text: #1e293b; --muted: #64748b; --border: #e2e8f0;
+  --bg: #f8fafc; --card: #fff; --radius: 10px;
+}
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg); color: var(--text); line-height: 1.6; }
+.container { max-width: 780px; margin: 0 auto; padding: 24px 16px 64px; }
+header { text-align: center; margin-bottom: 32px; }
+header h1 { font-size: 1.6rem; margin-bottom: 4px; }
+header p { color: var(--muted); font-size: 0.95rem; }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 24px; margin-bottom: 16px; }
+.card h2 { font-size: 1.1rem; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+.card h2 .step { background: var(--text); color: #fff; width: 26px; height: 26px;
+  border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+  font-size: 0.8rem; flex-shrink: 0; }
+.row { display: flex; gap: 12px; flex-wrap: wrap; }
+.field { display: flex; flex-direction: column; flex: 1; min-width: 140px; margin-bottom: 12px; }
+.field label { font-size: 0.82rem; color: var(--muted); margin-bottom: 3px; font-weight: 500; }
+.field input, .field select { padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px;
+  font-size: 0.95rem; background: #fff; }
+.field input:focus, .field select:focus { outline: none; border-color: #93c5fd; box-shadow: 0 0 0 3px #dbeafe; }
+.field .hint { font-size: 0.75rem; color: var(--muted); margin-top: 2px; }
+.radio-group { display: flex; gap: 8px; margin-bottom: 12px; }
+.radio-group label { display: flex; align-items: center; gap: 6px; padding: 8px 14px;
+  border: 1px solid var(--border); border-radius: 6px; cursor: pointer; font-size: 0.9rem;
+  transition: all 0.15s; }
+.radio-group input { display: none; }
+.radio-group input:checked + label, .radio-group label:has(input:checked) {
+  border-color: var(--hp); background: var(--hp-bg); color: var(--hp); font-weight: 600; }
+.radio-group label:has(input:checked) { border-color: var(--hp); background: var(--hp-bg); }
+details { margin-top: 8px; }
+details summary { cursor: pointer; font-size: 0.9rem; color: var(--muted); padding: 8px 0;
+  user-select: none; }
+details summary:hover { color: var(--text); }
+.tier-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.tier-row input { width: 100px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px;
+  font-size: 0.9rem; }
+.tier-row span { font-size: 0.85rem; color: var(--muted); white-space: nowrap; }
+.btn-sm { padding: 4px 12px; border: 1px solid var(--border); border-radius: 6px; background: #fff;
+  cursor: pointer; font-size: 0.82rem; color: var(--muted); }
+.btn-sm:hover { background: var(--bg); }
+#calculate-btn { display: block; width: 100%; padding: 14px; background: var(--hp); color: #fff;
+  border: none; border-radius: var(--radius); font-size: 1.05rem; font-weight: 600;
+  cursor: pointer; margin-top: 8px; transition: background 0.15s; }
+#calculate-btn:hover { background: #0f766e; }
+#calculate-btn:disabled { background: #94a3b8; cursor: not-allowed; }
+#loading { display: none; text-align: center; padding: 32px; color: var(--muted); }
+#loading.active { display: block; }
+#loading .spinner { display: inline-block; width: 28px; height: 28px;
+  border: 3px solid var(--border); border-top-color: var(--hp); border-radius: 50%;
+  animation: spin 0.8s linear infinite; margin-bottom: 8px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+#error { display: none; background: #fef2f2; border: 1px solid #fecaca; color: #991b1b;
+  padding: 12px 16px; border-radius: var(--radius); margin-bottom: 16px; font-size: 0.9rem; }
+#error.active { display: block; }
+
+/* Results */
+#results { display: none; }
+#results.active { display: block; }
+.summary { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 20px; }
+.summary-card { padding: 20px 16px; border-radius: var(--radius); text-align: center; }
+.summary-card.gas { background: var(--gas-bg); border: 1px solid var(--gas-border); }
+.summary-card.hp { background: var(--hp-bg); border: 1px solid var(--hp-border); }
+.summary-card.savings { background: var(--save-bg); border: 1px solid #bbf7d0; }
+.summary-card .label { font-size: 0.8rem; color: var(--muted); text-transform: uppercase;
+  letter-spacing: 0.03em; margin-bottom: 4px; }
+.summary-card .amount { font-size: 1.6rem; font-weight: 700; }
+.summary-card.gas .amount { color: var(--gas); }
+.summary-card.hp .amount { color: var(--hp); }
+.summary-card.savings .amount { color: var(--save); }
+.summary-card .sub { font-size: 0.8rem; color: var(--muted); margin-top: 2px; }
+.verdict { text-align: center; padding: 16px; background: var(--card); border: 1px solid var(--border);
+  border-radius: var(--radius); margin-bottom: 20px; font-size: 1.05rem; }
+.verdict strong { font-size: 1.1rem; }
+
+/* Chart */
+.chart-container { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 20px; margin-bottom: 20px; }
+.chart-container h3 { font-size: 0.95rem; margin-bottom: 16px; }
+.chart { display: flex; align-items: flex-end; gap: 6px; height: 200px; padding-bottom: 28px;
+  position: relative; border-bottom: 1px solid var(--border); }
+.chart-month { flex: 1; display: flex; gap: 2px; align-items: flex-end; justify-content: center;
+  position: relative; height: 100%; }
+.chart-month .bar { width: 14px; border-radius: 3px 3px 0 0; min-height: 1px;
+  transition: height 0.4s ease; position: relative; }
+.chart-month .bar.gas-bar { background: var(--gas); }
+.chart-month .bar.hp-bar { background: var(--hp); }
+.chart-month .bar:hover::after { content: attr(data-tip); position: absolute; bottom: 100%;
+  left: 50%; transform: translateX(-50%); background: var(--text); color: #fff; padding: 3px 8px;
+  border-radius: 4px; font-size: 0.72rem; white-space: nowrap; pointer-events: none; }
+.chart-labels { display: flex; gap: 6px; margin-top: 6px; }
+.chart-labels span { flex: 1; text-align: center; font-size: 0.72rem; color: var(--muted); }
+.chart-legend { display: flex; gap: 16px; justify-content: center; margin-top: 12px; font-size: 0.82rem; }
+.chart-legend span { display: flex; align-items: center; gap: 5px; }
+.chart-legend .dot { width: 10px; height: 10px; border-radius: 2px; }
+
+/* Details */
+.details-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+.detail-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 16px; }
+.detail-card h3 { font-size: 0.9rem; margin-bottom: 10px; color: var(--muted); }
+.detail-row { display: flex; justify-content: space-between; padding: 4px 0;
+  font-size: 0.88rem; border-bottom: 1px solid #f1f5f9; }
+.detail-row:last-child { border-bottom: none; }
+.detail-row .val { font-weight: 600; }
+.notes { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 16px; font-size: 0.82rem; color: var(--muted); }
+.notes h3 { font-size: 0.9rem; color: var(--text); margin-bottom: 8px; }
+.notes ul { padding-left: 18px; }
+.notes li { margin-bottom: 4px; }
+
+/* Payoff section */
+.stage-divider { text-align: center; margin: 28px 0 20px; position: relative; }
+.stage-divider::before { content: ''; position: absolute; top: 50%; left: 0; right: 0;
+  border-top: 1px solid var(--border); }
+.stage-divider span { background: var(--bg); padding: 0 16px; position: relative;
+  font-size: 0.85rem; color: var(--muted); font-weight: 500; text-transform: uppercase;
+  letter-spacing: 0.04em; }
+#payoff-section .field select { font-size: 0.9rem; }
+.cost-table { width: 100%; font-size: 0.88rem; border-collapse: collapse; }
+.cost-table td { padding: 6px 0; vertical-align: top; }
+.cost-table td:last-child { text-align: right; font-weight: 600; white-space: nowrap; }
+.cost-table tr.section-head td { padding-top: 14px; font-weight: 600; color: var(--muted);
+  font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.03em; }
+.cost-table tr.indent td:first-child { padding-left: 12px; color: var(--muted); }
+.cost-table tr.total-row td { padding-top: 10px; border-top: 2px solid var(--text);
+  font-weight: 700; font-size: 0.95rem; }
+.cost-table tr.credit td:last-child { color: var(--save); }
+.payback-bar { height: 32px; background: #f1f5f9; border-radius: 6px; margin: 12px 0 6px;
+  position: relative; overflow: hidden; }
+.payback-fill { height: 100%; border-radius: 6px; display: flex; align-items: center;
+  justify-content: center; color: #fff; font-size: 0.8rem; font-weight: 600;
+  transition: width 0.4s ease; }
+
+@media (max-width: 600px) {
+  .summary { grid-template-columns: 1fr; }
+  .details-grid { grid-template-columns: 1fr; }
+  .row { flex-direction: column; }
+  .field { min-width: 100%; }
+  .chart-month .bar { width: 10px; }
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>Heat Pump vs Gas Furnace Calculator</h1>
+    <p>Enter your ZIP code and two utility bills to see estimated annual heating costs.</p>
+  </header>
+
+  <div id="error"></div>
+
+  <!-- ZIP Code -->
+  <div class="card">
+    <h2><span class="step">1</span> Location</h2>
+    <div class="row">
+      <div class="field" style="max-width:160px">
+        <label for="zip">ZIP Code</label>
+        <input type="text" id="zip" maxlength="5" pattern="\d{5}" placeholder="e.g. 60614" inputmode="numeric">
+      </div>
+      <div class="field" style="flex:2">
+        <label>&nbsp;</label>
+        <div id="zip-info" style="padding:8px 0;font-size:0.9rem;color:var(--muted)"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- January Bill -->
+  <div class="card">
+    <h2><span class="step">2</span> January Utility Bill</h2>
+    <p style="font-size:0.85rem;color:var(--muted);margin-bottom:12px">Your most recent January (peak heating) bill.</p>
+    <div class="row">
+      <div class="field">
+        <label for="jan-start">Billing Period Start</label>
+        <input type="date" id="jan-start">
+      </div>
+      <div class="field">
+        <label for="jan-end">Billing Period End</label>
+        <input type="date" id="jan-end">
+      </div>
+    </div>
+    <div class="row">
+      <div class="field">
+        <label for="jan-gas-usage">Gas Usage</label>
+        <input type="number" id="jan-gas-usage" step="0.1" min="0" placeholder="120">
+      </div>
+      <div class="field" style="max-width:120px">
+        <label for="jan-gas-unit">Unit</label>
+        <select id="jan-gas-unit">
+          <option value="therms">Therms</option>
+          <option value="ccf">CCF</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="jan-gas-cost">Gas Usage Charges ($)</label>
+        <input type="number" id="jan-gas-cost" step="0.01" min="0" placeholder="130.00">
+        <span class="hint">Volumetric charges only — exclude fixed monthly service fees</span>
+      </div>
+    </div>
+    <div class="row">
+      <div class="field">
+        <label for="jan-elec-usage">Electricity Usage (kWh)</label>
+        <input type="number" id="jan-elec-usage" step="1" min="0" placeholder="500">
+      </div>
+      <div class="field">
+        <label for="jan-elec-cost">Electric Usage Charges ($)</label>
+        <input type="number" id="jan-elec-cost" step="0.01" min="0" placeholder="65.00">
+        <span class="hint">Volumetric charges only — exclude fixed monthly service fees</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- May Bill -->
+  <div class="card">
+    <h2><span class="step">3</span> May Utility Bill</h2>
+    <p style="font-size:0.85rem;color:var(--muted);margin-bottom:12px">Your most recent May (baseline, minimal heating) bill.</p>
+    <div class="row">
+      <div class="field">
+        <label for="may-start">Billing Period Start</label>
+        <input type="date" id="may-start">
+      </div>
+      <div class="field">
+        <label for="may-end">Billing Period End</label>
+        <input type="date" id="may-end">
+      </div>
+    </div>
+    <div class="row">
+      <div class="field">
+        <label for="may-gas-usage">Gas Usage</label>
+        <input type="number" id="may-gas-usage" step="0.1" min="0" placeholder="15">
+      </div>
+      <div class="field" style="max-width:120px">
+        <label for="may-gas-unit">Unit</label>
+        <select id="may-gas-unit">
+          <option value="therms">Therms</option>
+          <option value="ccf">CCF</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="may-gas-cost">Gas Usage Charges ($)</label>
+        <input type="number" id="may-gas-cost" step="0.01" min="0" placeholder="18.00">
+        <span class="hint">Volumetric charges only — exclude fixed monthly service fees</span>
+      </div>
+    </div>
+    <div class="row">
+      <div class="field">
+        <label for="may-elec-usage">Electricity Usage (kWh)</label>
+        <input type="number" id="may-elec-usage" step="1" min="0" placeholder="400">
+      </div>
+      <div class="field">
+        <label for="may-elec-cost">Electric Usage Charges ($)</label>
+        <input type="number" id="may-elec-cost" step="0.01" min="0" placeholder="52.00">
+        <span class="hint">Volumetric charges only — exclude fixed monthly service fees</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings -->
+  <div class="card">
+    <h2><span class="step">4</span> Settings</h2>
+    <label style="font-size:0.85rem;color:var(--muted);display:block;margin-bottom:6px">Furnace Type</label>
+    <div class="radio-group">
+      <label><input type="radio" name="furnace" value="0.80" checked> Standard (80% AFUE)</label>
+      <label><input type="radio" name="furnace" value="0.95"> High-Efficiency Condensing (95% AFUE)</label>
+    </div>
+
+    <details id="advanced-section">
+      <summary>Advanced Electricity Billing</summary>
+      <div style="margin-top:12px">
+        <label style="font-size:0.85rem;color:var(--muted);display:block;margin-bottom:6px">Energy Rate Structure</label>
+        <div class="radio-group">
+          <label><input type="radio" name="energy-rate" value="flat" checked> Flat Rate</label>
+          <label><input type="radio" name="energy-rate" value="tiered"> Tiered / Inclining Block</label>
+          <label><input type="radio" name="energy-rate" value="tou"> Time-of-Use (TOU)</label>
+        </div>
+
+        <!-- Tiered options -->
+        <div id="tiered-options" style="display:none;margin-top:12px">
+          <p style="font-size:0.82rem;color:var(--muted);margin-bottom:8px">
+            Enter your rate tiers. The calculator will apply baseline electric usage first,
+            then add heat pump kWh at the marginal rate.
+          </p>
+          <div id="tier-rows">
+            <div class="tier-row">
+              <span>First</span>
+              <input type="number" class="tier-limit" placeholder="500" min="0"> <span>kWh at $</span>
+              <input type="number" class="tier-rate" placeholder="0.10" step="0.001" min="0"> <span>/kWh</span>
+            </div>
+            <div class="tier-row">
+              <span>Next</span>
+              <input type="number" class="tier-limit" placeholder="500" min="0"> <span>kWh at $</span>
+              <input type="number" class="tier-rate" placeholder="0.15" step="0.001" min="0"> <span>/kWh</span>
+            </div>
+            <div class="tier-row">
+              <span>Above that at $</span>
+              <input type="number" class="tier-rate-final" placeholder="0.20" step="0.001" min="0"> <span>/kWh</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- TOU options -->
+        <div id="tou-options" style="display:none;margin-top:12px">
+          <p style="font-size:0.82rem;color:var(--muted);margin-bottom:8px">
+            Heating load is spread throughout the day but peaks morning/evening.
+          </p>
+          <div class="row">
+            <div class="field">
+              <label>Peak Rate ($/kWh)</label>
+              <input type="number" id="tou-peak-rate" step="0.001" placeholder="0.25">
+            </div>
+            <div class="field">
+              <label>Off-Peak Rate ($/kWh)</label>
+              <input type="number" id="tou-offpeak-rate" step="0.001" placeholder="0.08">
+            </div>
+            <div class="field">
+              <label>% of Heating During Peak</label>
+              <input type="number" id="tou-peak-pct" step="1" min="0" max="100" placeholder="35">
+              <span class="hint">Default 35%. Adjust if you have a smart thermostat.</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Demand charges (independent, combinable with any energy rate) -->
+        <div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border);">
+          <label style="display:flex;align-items:center;gap:8px;font-size:0.9rem;cursor:pointer">
+            <input type="checkbox" id="has-demand">
+            My utility charges demand fees ($/kW)
+          </label>
+          <div id="demand-options" style="display:none;margin-top:8px">
+            <p style="font-size:0.82rem;color:var(--muted);margin-bottom:8px">
+              Monthly demand charge based on peak kW draw. Heat pump adds ~3-5 kW.
+            </p>
+            <div class="row">
+              <div class="field">
+                <label>Demand Charge ($/kW/month)</label>
+                <input type="number" id="demand-rate" step="0.01" placeholder="10.00">
+              </div>
+              <div class="field">
+                <label>Heat Pump Peak Draw (kW)</label>
+                <input type="number" id="demand-hp-kw" step="0.1" placeholder="4.0">
+                <span class="hint">Typically 3-5 kW for residential</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Net metering -->
+        <div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border);">
+          <label style="display:flex;align-items:center;gap:8px;font-size:0.9rem;cursor:pointer">
+            <input type="checkbox" id="net-metering">
+            I have solar with net metering
+          </label>
+          <div id="net-metering-options" style="display:none;margin-top:8px">
+            <div class="field" style="max-width:280px">
+              <label>Avg Monthly Solar Excess Exported (kWh)</label>
+              <input type="number" id="solar-excess" step="1" placeholder="200">
+              <span class="hint">Excess kWh that currently go to the grid. Heat pump can absorb some of this.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </details>
+  </div>
+
+  <button id="calculate-btn">Calculate Annual Heating Costs</button>
+
+  <div id="loading"><div class="spinner"></div><div>Fetching weather data...</div></div>
+
+  <!-- Results -->
+  <div id="results">
+    <div class="summary">
+      <div class="summary-card gas">
+        <div class="label">Gas Furnace</div>
+        <div class="amount" id="r-gas-cost">-</div>
+        <div class="sub" id="r-gas-sub"></div>
+      </div>
+      <div class="summary-card hp">
+        <div class="label">Heat Pump</div>
+        <div class="amount" id="r-hp-cost">-</div>
+        <div class="sub" id="r-hp-sub"></div>
+      </div>
+      <div class="summary-card savings">
+        <div class="label">Annual Savings</div>
+        <div class="amount" id="r-savings">-</div>
+        <div class="sub" id="r-savings-sub"></div>
+      </div>
+    </div>
+
+    <div class="verdict" id="r-verdict"></div>
+
+    <div class="chart-container">
+      <h3>Monthly Heating Cost Comparison</h3>
+      <div class="chart" id="chart"></div>
+      <div class="chart-labels" id="chart-labels"></div>
+      <div class="chart-legend">
+        <span><span class="dot" style="background:var(--gas)"></span> Gas Furnace</span>
+        <span><span class="dot" style="background:var(--hp)"></span> Heat Pump</span>
+      </div>
+    </div>
+
+    <!-- Stage 2: Installation & Payoff -->
+    <div class="stage-divider"><span>What Would It Cost to Switch?</span></div>
+
+    <div class="card" id="payoff-section">
+      <p style="font-size:0.85rem;color:var(--muted);margin-bottom:16px">
+        Adjust to match your home. Cost ranges are rough national averages&hairsp;&mdash;&hairsp;get local quotes for real numbers.
+      </p>
+      <div class="row">
+        <div class="field">
+          <label for="p-cooling">Current cooling system</label>
+          <select id="p-cooling">
+            <option value="central-ac">Central AC (with ductwork)</option>
+            <option value="window">Window units / portable</option>
+            <option value="none">No cooling</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="p-ac-age">AC / furnace age</label>
+          <select id="p-ac-age">
+            <option value="new">&lt; 5 years old</option>
+            <option value="mid" selected>5 &ndash; 15 years old</option>
+            <option value="old">15+ years / end of life</option>
+          </select>
+        </div>
+      </div>
+      <div class="row">
+        <div class="field">
+          <label for="p-panel">Electrical panel</label>
+          <select id="p-panel">
+            <option value="200" selected>200A or higher</option>
+            <option value="150">150A</option>
+            <option value="100">100A (likely needs upgrade)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="p-ducts">Ductwork</label>
+          <select id="p-ducts">
+            <option value="good" selected>Good condition, well-sealed</option>
+            <option value="fair">Older / needs sealing</option>
+            <option value="none">No ductwork (ductless install)</option>
+          </select>
+        </div>
+      </div>
+      <div id="payoff-output" style="margin-top:16px"></div>
+    </div>
+
+    <div class="details-grid">
+      <div class="detail-card">
+        <h3>Derived Values</h3>
+        <div id="r-derived"></div>
+      </div>
+      <div class="detail-card">
+        <h3>Heat Pump Details</h3>
+        <div id="r-hp-details"></div>
+      </div>
+    </div>
+
+    <div class="notes">
+      <h3>Assumptions &amp; Notes</h3>
+      <ul id="r-notes"></ul>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// Configuration
+// ============================================================
+const COP_CURVES = {
+  standard: {
+    name: 'Standard Heat Pump',
+    // [temp °F, COP] pairs, descending by temp
+    points: [[62,4.0],[47,3.4],[35,2.7],[25,2.1],[17,1.8]],
+    auxBelow: 10 // COP=1 below this
+  },
+  coldClimate: {
+    name: 'Cold-Climate Heat Pump (Recommended)',
+    points: [[62,4.2],[47,3.7],[35,3.1],[25,2.6],[17,2.2],[5,1.8],[-5,1.5]],
+    auxBelow: -10
+  }
+};
+let lastResults = null; // stored for payoff recalculation
+const BASE_TEMP = 65; // HDD base
+const BTU_PER_THERM = 100_000;
+const BTU_PER_KWH = 3_412;
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+// ============================================================
+// API helpers
+// ============================================================
+async function lookupZip(zip) {
+  const resp = await fetch(`https://api.zippopotam.us/us/${zip}`);
+  if (!resp.ok) throw new Error(`ZIP code "${zip}" not found.`);
+  const data = await resp.json();
+  const p = data.places[0];
+  return { lat: parseFloat(p.latitude), lon: parseFloat(p.longitude),
+           city: p['place name'], state: p['state abbreviation'] || p.state };
+}
+
+async function fetchWeather(lat, lon, startDate, endDate) {
+  const url = `https://archive-api.open-meteo.com/v1/archive?latitude=${lat}&longitude=${lon}` +
+    `&start_date=${startDate}&end_date=${endDate}` +
+    `&daily=temperature_2m_mean,temperature_2m_min,temperature_2m_max` +
+    `&temperature_unit=fahrenheit&timezone=auto`;
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error('Failed to fetch weather data. Try again shortly.');
+  const data = await resp.json();
+  if (!data.daily || !data.daily.time || data.daily.time.length === 0)
+    throw new Error('No weather data available for this location and date range.');
+  return data.daily.time.map((d, i) => ({
+    date: d,
+    mean: data.daily.temperature_2m_mean[i],
+    min: data.daily.temperature_2m_min[i],
+    max: data.daily.temperature_2m_max[i]
+  }));
+}
+
+// ============================================================
+// Calculation helpers
+// ============================================================
+function calcHDD(days) {
+  return days.reduce((sum, d) => sum + Math.max(0, BASE_TEMP - d.mean), 0);
+}
+
+function daysBetween(a, b) {
+  return Math.round((new Date(b) - new Date(a)) / 86400000);
+}
+
+function toTherms(val, unit) {
+  return unit === 'ccf' ? val * 1.037 : val;
+}
+
+function calcDesignTemp(days) {
+  // 1st percentile of daily lows during heating season (Oct-Mar)
+  const heatingLows = days
+    .filter(d => { const m = new Date(d.date).getMonth(); return m >= 9 || m <= 2; })
+    .map(d => d.min)
+    .sort((a, b) => a - b);
+  if (heatingLows.length === 0) return 30; // mild climate fallback
+  const idx = Math.max(0, Math.floor(heatingLows.length * 0.01));
+  return heatingLows[idx];
+}
+
+function selectCOPCurve(designTemp) {
+  return designTemp <= 20 ? COP_CURVES.coldClimate : COP_CURVES.standard;
+}
+
+function interpolateCOP(curve, temp) {
+  if (temp <= curve.auxBelow) return 1.0; // aux electric resistance
+  const pts = curve.points;
+  if (temp >= pts[0][0]) return pts[0][1];
+  if (temp <= pts[pts.length - 1][0]) {
+    // linear interp to COP=1 at auxBelow
+    const lastPt = pts[pts.length - 1];
+    const frac = (temp - curve.auxBelow) / (lastPt[0] - curve.auxBelow);
+    return 1.0 + frac * (lastPt[1] - 1.0);
+  }
+  for (let i = 0; i < pts.length - 1; i++) {
+    if (temp <= pts[i][0] && temp >= pts[i + 1][0]) {
+      const frac = (temp - pts[i + 1][0]) / (pts[i][0] - pts[i + 1][0]);
+      return pts[i + 1][1] + frac * (pts[i][1] - pts[i + 1][1]);
+    }
+  }
+  return pts[pts.length - 1][1];
+}
+
+// Calculate electric energy cost for added kWh (excludes demand charges)
+function calcElectricCost(baselineMonthlyKwh, addedKwh, rateInfo) {
+  const energyType = rateInfo.energyType || 'flat';
+  if (energyType === 'tiered') {
+    const totalKwh = baselineMonthlyKwh + addedKwh;
+    const costTotal = tieredCost(totalKwh, rateInfo.tiers);
+    const costBase = tieredCost(baselineMonthlyKwh, rateInfo.tiers);
+    return costTotal - costBase;
+  }
+  if (energyType === 'tou') {
+    const peakKwh = addedKwh * (rateInfo.peakPct / 100);
+    const offPeakKwh = addedKwh - peakKwh;
+    return peakKwh * rateInfo.peakRate + offPeakKwh * rateInfo.offPeakRate;
+  }
+  return addedKwh * rateInfo.rate; // flat
+}
+
+function tieredCost(kwh, tiers) {
+  let cost = 0, remaining = kwh;
+  for (const t of tiers) {
+    const used = t.limit ? Math.min(remaining, t.limit) : remaining;
+    cost += used * t.rate;
+    remaining -= used;
+    if (remaining <= 0) break;
+  }
+  return cost;
+}
+
+// ============================================================
+// Main calculation
+// ============================================================
+async function calculate() {
+  showError('');
+  const zip = $('zip').value.trim();
+  if (!/^\d{5}$/.test(zip)) return showError('Please enter a valid 5-digit ZIP code.');
+
+  // Read inputs
+  const janStart = $('jan-start').value;
+  const janEnd = $('jan-end').value;
+  const mayStart = $('may-start').value;
+  const mayEnd = $('may-end').value;
+  if (!janStart || !janEnd || !mayStart || !mayEnd)
+    return showError('Please enter billing period dates for both bills.');
+
+  const janGas = toTherms(num('jan-gas-usage'), $('jan-gas-unit').value);
+  const janGasCost = num('jan-gas-cost');
+  const janElec = num('jan-elec-usage');
+  const janElecCost = num('jan-elec-cost');
+  const mayGas = toTherms(num('may-gas-usage'), $('may-gas-unit').value);
+  const mayGasCost = num('may-gas-cost');
+  const mayElec = num('may-elec-usage');
+  const mayElecCost = num('may-elec-cost');
+
+  if ([janGas, janGasCost, janElec, janElecCost, mayGas, mayGasCost, mayElec, mayElecCost].some(v => v <= 0))
+    return showError('Please fill in all bill amounts with positive values.');
+
+  const furnaceEff = parseFloat(document.querySelector('input[name="furnace"]:checked').value);
+
+  // Derive rates
+  const gasRate = janGasCost / janGas;
+  const elecRate = mayElecCost / mayElec; // use May for baseline electric rate
+
+  // Baseline gas (daily, from May)
+  const mayDays = daysBetween(mayStart, mayEnd);
+  const janDays = daysBetween(janStart, janEnd);
+  if (mayDays <= 0 || janDays <= 0)
+    return showError('Billing period end must be after start.');
+  const baselineGasDaily = mayGas / mayDays;
+  const janBaselineGas = baselineGasDaily * janDays;
+  const heatingGas = janGas - janBaselineGas;
+  if (heatingGas <= 0)
+    return showError('January gas usage is not higher than baseline (May). Check your entries — January should have significantly more gas usage than May.');
+
+  // Baseline monthly electric (for tiered rate calculation)
+  const baselineMonthlyKwh = mayElec / mayDays * 30.44;
+
+  // Build rate info
+  const rateInfo = buildRateInfo(elecRate, baselineMonthlyKwh);
+
+  // Show loading
+  $('calculate-btn').disabled = true;
+  $('loading').classList.add('active');
+  $('results').classList.remove('active');
+
+  try {
+    // Fetch weather for January billing period
+    const loc = await lookupZip(zip);
+    const janWeather = await fetchWeather(loc.lat, loc.lon, janStart, janEnd);
+
+    // Calculate HDD for January billing period
+    const janHDD = calcHDD(janWeather);
+    if (janHDD <= 0)
+      throw new Error('No heating degree days detected for January billing period. Is this a very warm climate?');
+
+    // Load factor: BTU of heat delivered per degree-day
+    const loadFactor = heatingGas * BTU_PER_THERM * furnaceEff / janHDD;
+
+    // Fetch full year of weather data (previous complete calendar year)
+    const yearForData = new Date(janEnd).getFullYear() - 1;
+    const annualWeather = await fetchWeather(loc.lat, loc.lon, `${yearForData}-01-01`, `${yearForData}-12-31`);
+
+    // Design temp and COP curve
+    const designTemp = calcDesignTemp(annualWeather);
+    const copCurve = selectCOPCurve(designTemp);
+
+    // Calculate annual costs month-by-month
+    const monthly = MONTHS.map(() => ({ gasCost: 0, hpKwh: 0, hpCost: 0, hdd: 0, days: 0 }));
+
+    for (const day of annualWeather) {
+      const m = new Date(day.date).getMonth();
+      const hdd = Math.max(0, BASE_TEMP - day.mean);
+      monthly[m].hdd += hdd;
+      monthly[m].days++;
+      if (hdd > 0) {
+        const heatBTU = loadFactor * hdd;
+        // Gas furnace cost
+        const gasForDay = heatBTU / (furnaceEff * BTU_PER_THERM);
+        monthly[m].gasCost += gasForDay * gasRate;
+        // Heat pump
+        const cop = interpolateCOP(copCurve, day.mean);
+        const hpKwhDay = heatBTU / (cop * BTU_PER_KWH);
+        monthly[m].hpKwh += hpKwhDay;
+      }
+    }
+
+    // Apply electric rate structure per month for HP
+    let annualGas = 0, annualHP = 0, annualHPkwh = 0, annualHDD = 0;
+    let netMeteringSavings = 0;
+    const hasNetMetering = $('net-metering').checked;
+    const solarExcess = hasNetMetering ? (num('solar-excess') || 0) : 0;
+
+    for (let m = 0; m < 12; m++) {
+      annualGas += monthly[m].gasCost;
+      annualHDD += monthly[m].hdd;
+      annualHPkwh += monthly[m].hpKwh;
+
+      let hpKwhToPrice = monthly[m].hpKwh;
+      if (hasNetMetering && solarExcess > 0) {
+        const absorbed = Math.min(solarExcess, hpKwhToPrice);
+        hpKwhToPrice -= absorbed;
+        netMeteringSavings += absorbed * elecRate;
+      }
+      monthly[m].hpCost = calcElectricCost(baselineMonthlyKwh, hpKwhToPrice, rateInfo);
+      // Add demand charges for months with HP usage
+      if (rateInfo.hasDemand && monthly[m].hpKwh > 0) {
+        monthly[m].hpCost += rateInfo.demandRate * rateInfo.hpKw;
+      }
+      annualHP += monthly[m].hpCost;
+    }
+
+    const savings = annualGas - annualHP;
+
+    // Weighted average COP
+    let totalHeatBTU = 0, totalHPkwh = 0;
+    for (const day of annualWeather) {
+      const hdd = Math.max(0, BASE_TEMP - day.mean);
+      if (hdd > 0) {
+        const heatBTU = loadFactor * hdd;
+        totalHeatBTU += heatBTU;
+        totalHPkwh += heatBTU / (interpolateCOP(copCurve, day.mean) * BTU_PER_KWH);
+      }
+    }
+    const avgCOP = totalHeatBTU / (totalHPkwh * BTU_PER_KWH);
+
+    // Render
+    renderResults({
+      loc, gasRate, elecRate, baselineGasDaily, heatingGas, janHDD, janDays,
+      loadFactor, designTemp, copCurve, avgCOP,
+      annualGas, annualHP, savings, annualHPkwh, annualHDD,
+      monthly, furnaceEff, rateInfo, yearForData,
+      hasNetMetering, netMeteringSavings, solarExcess
+    });
+
+  } catch (e) {
+    showError(e.message);
+  } finally {
+    $('calculate-btn').disabled = false;
+    $('loading').classList.remove('active');
+  }
+}
+
+function buildRateInfo(flatRate, baselineKwh) {
+  const energyType = document.querySelector('input[name="energy-rate"]:checked')?.value || 'flat';
+  const info = { energyType, rate: flatRate };
+
+  if (energyType === 'tiered') {
+    const limits = document.querySelectorAll('.tier-limit');
+    const rates = document.querySelectorAll('.tier-rate');
+    const finalRate = num('', document.querySelector('.tier-rate-final'));
+    const tiers = [];
+    limits.forEach((el, i) => {
+      const lim = parseFloat(el.value) || 0;
+      const r = parseFloat(rates[i]?.value) || 0;
+      if (lim > 0 && r > 0) tiers.push({ limit: lim, rate: r });
+    });
+    if (finalRate > 0) tiers.push({ limit: null, rate: finalRate });
+    if (tiers.length > 0) info.tiers = tiers;
+    else info.energyType = 'flat'; // fallback if no valid tiers
+  }
+  if (energyType === 'tou') {
+    info.peakRate = parseFloat($('tou-peak-rate').value) || flatRate;
+    info.offPeakRate = parseFloat($('tou-offpeak-rate').value) || flatRate;
+    info.peakPct = parseFloat($('tou-peak-pct').value) || 35;
+  }
+
+  // Demand charges are independent of energy rate structure
+  info.hasDemand = $('has-demand').checked;
+  if (info.hasDemand) {
+    info.demandRate = parseFloat($('demand-rate').value) || 0;
+    info.hpKw = parseFloat($('demand-hp-kw').value) || 4.0;
+  }
+
+  return info;
+}
+
+// ============================================================
+// Rendering
+// ============================================================
+function renderResults(r) {
+  lastResults = r;
+  $('r-gas-cost').textContent = fmt(r.annualGas);
+  $('r-gas-sub').textContent = `${(r.annualGas / r.gasRate).toFixed(0)} therms/yr`;
+  $('r-hp-cost').textContent = fmt(r.annualHP);
+  $('r-hp-sub').textContent = `${r.annualHPkwh.toFixed(0)} kWh/yr added`;
+  $('r-savings').textContent = (r.savings >= 0 ? '' : '-') + fmt(Math.abs(r.savings));
+  $('r-savings-sub').textContent = r.savings >= 0 ? 'with heat pump' : 'gas furnace is cheaper';
+
+  // Verdict
+  const v = $('r-verdict');
+  if (r.savings > 50) {
+    v.innerHTML = `<strong>A heat pump would save you ~${fmt(r.savings)}/year</strong> on heating costs in ${r.loc.city}, ${r.loc.state}.`;
+  } else if (r.savings > -50) {
+    v.innerHTML = `<strong>It's roughly a wash</strong> &mdash; heating costs are similar for both systems in ${r.loc.city}, ${r.loc.state}. Consider comfort, cooling benefits, and environmental factors.`;
+  } else {
+    v.innerHTML = `<strong>A gas furnace is ~${fmt(Math.abs(r.savings))}/year cheaper</strong> for heating in ${r.loc.city}, ${r.loc.state}. A heat pump may still make sense for cooling, comfort, or emissions goals.`;
+  }
+
+  // Chart
+  const chart = $('chart');
+  const labels = $('chart-labels');
+  chart.innerHTML = '';
+  labels.innerHTML = '';
+  const maxCost = Math.max(...r.monthly.map(m => Math.max(m.gasCost, m.hpCost)), 1);
+  for (let m = 0; m < 12; m++) {
+    const col = document.createElement('div');
+    col.className = 'chart-month';
+    const gasH = (r.monthly[m].gasCost / maxCost * 100).toFixed(1);
+    const hpH = (r.monthly[m].hpCost / maxCost * 100).toFixed(1);
+    col.innerHTML =
+      `<div class="bar gas-bar" style="height:${gasH}%" data-tip="Gas: ${fmt(r.monthly[m].gasCost)}"></div>` +
+      `<div class="bar hp-bar" style="height:${hpH}%" data-tip="HP: ${fmt(r.monthly[m].hpCost)}"></div>`;
+    chart.appendChild(col);
+    const lbl = document.createElement('span');
+    lbl.textContent = MONTHS[m];
+    labels.appendChild(lbl);
+  }
+
+  // Derived values
+  $('r-derived').innerHTML = [
+    ['Gas rate', `$${r.gasRate.toFixed(3)}/therm`],
+    ['Electric rate', `$${r.elecRate.toFixed(3)}/kWh`],
+    ['Baseline gas', `${r.baselineGasDaily.toFixed(2)} therms/day`],
+    ['Jan heating gas', `${r.heatingGas.toFixed(1)} therms (${r.janDays} days)`],
+    ['Jan billing period HDD', r.janHDD.toFixed(0)],
+    ['Home load factor', `${(r.loadFactor / 1000).toFixed(1)}k BTU/degree-day`],
+    [`Annual HDD (${r.yearForData})`, r.annualHDD.toFixed(0)],
+    ['Furnace efficiency', `${(r.furnaceEff * 100).toFixed(0)}% AFUE`],
+  ].map(([k,v]) => `<div class="detail-row"><span>${k}</span><span class="val">${v}</span></div>`).join('');
+
+  // HP details
+  const hpRows = [
+    ['System type', r.copCurve.name],
+    ['Design temperature', `${r.designTemp.toFixed(0)}°F`],
+    ['COP at design temp', interpolateCOP(r.copCurve, r.designTemp).toFixed(2)],
+    ['Weighted avg COP', r.avgCOP.toFixed(2)],
+    ['Aux heat (COP=1) below', `${r.copCurve.auxBelow}°F`],
+    ['Annual HP electricity', `${r.annualHPkwh.toFixed(0)} kWh`],
+  ];
+  if (r.hasNetMetering && r.solarExcess > 0) {
+    hpRows.push(['Solar offset', `${r.solarExcess} kWh/mo exported → saves ~${fmt(r.netMeteringSavings)}/yr`]);
+  }
+  const rateParts = [];
+  if (r.rateInfo.energyType !== 'flat') rateParts.push(r.rateInfo.energyType.toUpperCase());
+  if (r.rateInfo.hasDemand) rateParts.push('Demand');
+  if (rateParts.length > 0) {
+    hpRows.push(['Electric rate structure', rateParts.join(' + ')]);
+  }
+  $('r-hp-details').innerHTML = hpRows
+    .map(([k,v]) => `<div class="detail-row"><span>${k}</span><span class="val">${v}</span></div>`).join('');
+
+  // Notes
+  $('r-notes').innerHTML = [
+    `Weather data from <strong>${r.yearForData}</strong> calendar year (NOAA via Open-Meteo). Actual costs vary year to year.`,
+    'Comparison covers <strong>heating only</strong>. Heat pumps also provide cooling, potentially replacing a separate AC unit.',
+    'Gas service charges (meter fee) remain in both scenarios since gas appliances (water heater, stove, dryer) are assumed to stay.',
+    `Heating degree days use base ${BASE_TEMP}°F.`,
+    'COP values are representative of modern equipment. Actual COP depends on specific model, installation quality, and duct sizing.',
+    r.copCurve.auxBelow > -20 ? `Below ${r.copCurve.auxBelow}°F, the model assumes electric resistance backup (COP=1).` : '',
+    'Installation costs above are rough national averages. Get local contractor quotes for accurate pricing.',
+  ].filter(Boolean).map(n => `<li>${n}</li>`).join('');
+
+  updatePayoff();
+
+  $('results').classList.add('active');
+  $('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// ============================================================
+// Payoff estimation
+// ============================================================
+function updatePayoff() {
+  if (!lastResults) return;
+  const r = lastResults;
+  const out = $('payoff-output');
+
+  // --- System sizing ---
+  // Peak heating load on design day: loadFactor × (65 - designTemp) BTU over 24h
+  const peakBTUhr = r.loadFactor * (BASE_TEMP - r.designTemp) / 24;
+  const rawTons = peakBTUhr / 12000;
+  const tons = Math.max(1.5, Math.round(rawTons * 2) / 2); // nearest 0.5, min 1.5
+
+  const cooling = $('p-cooling').value;
+  const acAge = $('p-ac-age').value;
+  const panel = $('p-panel').value;
+  const ducts = $('p-ducts').value;
+  const isCold = r.copCurve === COP_CURVES.coldClimate;
+
+  // --- Equipment + installation cost ---
+  let equipLow, equipHigh, equipLabel;
+  if (ducts === 'none') {
+    const zones = Math.max(2, Math.ceil(tons));
+    equipLow = roundK(zones * 3500);
+    equipHigh = roundK(zones * 5500);
+    equipLabel = `Ductless system (${zones}-zone, ${tons}T)`;
+  } else {
+    const lo = isCold ? 4500 : 3500;
+    const hi = isCold ? 7000 : 5500;
+    equipLow = roundK(tons * lo);
+    equipHigh = roundK(tons * hi);
+    equipLabel = `${isCold ? 'Cold-climate' : 'Standard'} ducted HP (${tons}T)`;
+  }
+
+  // --- Additional costs ---
+  const addl = [];
+  let addlLow = 0, addlHigh = 0;
+
+  if (panel === '100') {
+    addl.push(['Electrical panel upgrade (100A \u2192 200A)', '$2,000', '$4,000']);
+    addlLow += 2000; addlHigh += 4000;
+  } else if (panel === '150') {
+    addl.push(['Panel assessment / possible subpanel', '$0', '$1,500']);
+    addlHigh += 1500;
+  }
+  if (ducts === 'fair') {
+    addl.push(['Duct sealing &amp; repair', '$500', '$2,500']);
+    addlLow += 500; addlHigh += 2500;
+  }
+
+  const grossLow = equipLow + addlLow;
+  const grossHigh = equipHigh + addlHigh;
+
+  // --- AC replacement credit ---
+  // If the existing AC/furnace is aging, the homeowner would replace it regardless.
+  // A heat pump replaces both furnace + AC, so part of the cost isn't incremental.
+  let creditLow = 0, creditHigh = 0, creditLabel = '';
+  if (cooling === 'central-ac') {
+    if (acAge === 'old') {
+      creditLow = 3000; creditHigh = 5000;
+      creditLabel = 'AC + furnace you\u2019d replace anyway';
+    } else if (acAge === 'mid') {
+      creditLow = 1500; creditHigh = 3000;
+      creditLabel = 'Prorated replacement credit (aging system)';
+    }
+  }
+
+  const netLow = Math.max(0, grossLow - creditHigh);
+  const netHigh = Math.max(0, grossHigh - creditLow);
+
+  // --- Payback ---
+  const netMid = (netLow + netHigh) / 2;
+  const annualSavings = r.savings;
+
+  // --- Render ---
+  let html = '<table class="cost-table">';
+
+  // System
+  html += sectionHead('Estimated Installation');
+  html += costRow(equipLabel, fmtRange(equipLow, equipHigh));
+  for (const [label, lo, hi] of addl) {
+    html += costRow(label, `${lo} \u2013 ${hi}`, 'indent');
+  }
+  html += costRow('<strong>Gross cost</strong>', `<strong>${fmtRange(grossLow, grossHigh)}</strong>`);
+
+  // Credits
+  if (creditLabel) {
+    html += sectionHead('Offsets');
+    html += costRow(creditLabel, `\u2212${fmtRange(creditLow, creditHigh)}`, 'indent credit');
+  }
+
+  // Net
+  html += `<tr class="total-row"><td><strong>Net estimated cost</strong></td><td>${fmtRange(netLow, netHigh)}</td></tr>`;
+  html += '</table>';
+
+  // Payback
+  html += '<div style="margin-top:20px">';
+  if (annualSavings > 25) {
+    const yearsLow = Math.max(0, netLow / annualSavings);
+    const yearsHigh = Math.max(0, netHigh / annualSavings);
+    const yearsMid = netMid / annualSavings;
+    const barPct = Math.min(100, yearsMid / 25 * 100); // 25yr = full bar
+    const barColor = yearsMid <= 7 ? 'var(--save)' : yearsMid <= 15 ? 'var(--gas)' : '#dc2626';
+
+    html += `<div style="font-size:0.9rem;margin-bottom:4px"><strong>Simple payback:</strong> `;
+    if (yearsLow < 1 && yearsHigh < 1) {
+      html += `under 1 year</div>`;
+    } else {
+      html += `${fmtYears(yearsLow)} \u2013 ${fmtYears(yearsHigh)}</div>`;
+    }
+    html += `<div class="payback-bar"><div class="payback-fill" style="width:${barPct}%;background:${barColor}">${fmtYears(yearsMid)}</div></div>`;
+    html += '<div style="display:flex;justify-content:space-between;font-size:0.72rem;color:var(--muted)"><span>0 yr</span><span>25 yr</span></div>';
+
+    if (yearsMid <= 7) {
+      html += '<p style="font-size:0.85rem;margin-top:10px;color:var(--save)">Strong payback — likely worth switching on economics alone.</p>';
+    } else if (yearsMid <= 12) {
+      html += '<p style="font-size:0.85rem;margin-top:10px;color:var(--text)">Moderate payback. Cooling savings, comfort, and available rebates could strengthen the case.</p>';
+    } else if (yearsMid <= 20) {
+      html += '<p style="font-size:0.85rem;margin-top:10px;color:var(--muted)">Long payback on heating savings alone. May still make sense if you also need AC replacement or value electrification.</p>';
+    } else {
+      html += '<p style="font-size:0.85rem;margin-top:10px;color:var(--muted)">Heating economics favor gas here. A heat pump could still make sense for cooling or when paired with solar.</p>';
+    }
+  } else if (annualSavings > -25) {
+    html += '<p style="font-size:0.9rem">Operating costs are roughly equal. Payback depends on whether you\'d be replacing aging HVAC equipment anyway and on available local/utility rebates.</p>';
+  } else {
+    html += `<p style="font-size:0.9rem">Gas furnace is <strong>${fmt(Math.abs(annualSavings))}/yr cheaper</strong> to operate for heating. A heat pump may still be worthwhile if you need AC, want to reduce gas dependence, or have access to rebates.</p>`;
+  }
+
+  html += '<p style="font-size:0.8rem;color:var(--muted);margin-top:10px">Check your state/utility for current rebates and incentives — these change frequently and can significantly reduce net cost.</p>';
+  html += '</div>';
+
+  out.innerHTML = html;
+}
+
+function roundK(n) { return Math.round(n / 500) * 500; }
+function fmtRange(lo, hi) {
+  if (lo === hi) return fmt(lo);
+  return `${fmt(lo)} \u2013 ${fmt(hi)}`;
+}
+function fmtYears(y) {
+  if (y < 1) return '< 1 yr';
+  return y < 10 ? `${y.toFixed(1)} yr` : `${Math.round(y)} yr`;
+}
+function sectionHead(label) {
+  return `<tr class="section-head"><td colspan="2">${label}</td></tr>`;
+}
+function costRow(label, value, cls) {
+  return `<tr${cls ? ` class="${cls}"` : ''}><td>${label}</td><td>${value}</td></tr>`;
+}
+
+// ============================================================
+// UI helpers
+// ============================================================
+function $(id) { return typeof id === 'string' ? document.getElementById(id) : id; }
+function num(id, el) {
+  const elem = el || $(id);
+  return parseFloat(elem?.value) || 0;
+}
+function fmt(n) { return '$' + Math.round(n).toLocaleString(); }
+function showError(msg) {
+  const el = $('error');
+  el.textContent = msg;
+  el.classList.toggle('active', !!msg);
+}
+
+// ZIP auto-lookup
+let zipTimer;
+$('zip').addEventListener('input', () => {
+  clearTimeout(zipTimer);
+  const val = $('zip').value.trim();
+  if (/^\d{5}$/.test(val)) {
+    zipTimer = setTimeout(async () => {
+      try {
+        const loc = await lookupZip(val);
+        $('zip-info').textContent = `${loc.city}, ${loc.state}`;
+        $('zip-info').style.color = 'var(--text)';
+      } catch {
+        $('zip-info').textContent = 'ZIP not found';
+        $('zip-info').style.color = '#dc2626';
+      }
+    }, 300);
+  } else {
+    $('zip-info').textContent = '';
+  }
+});
+
+// Energy rate radio toggle
+document.querySelectorAll('input[name="energy-rate"]').forEach(radio => {
+  radio.addEventListener('change', () => {
+    const v = radio.value;
+    ['tiered','tou'].forEach(t => {
+      const el = $(t + '-options');
+      if (el) el.style.display = v === t ? 'block' : 'none';
+    });
+  });
+});
+
+// Demand charges toggle
+$('has-demand').addEventListener('change', () => {
+  $('demand-options').style.display = $('has-demand').checked ? 'block' : 'none';
+});
+
+// Net metering toggle
+$('net-metering').addEventListener('change', () => {
+  $('net-metering-options').style.display = $('net-metering').checked ? 'block' : 'none';
+});
+
+// Date defaults: most recent January and May calendar periods
+function pad(n) { return String(n).padStart(2, '0'); }
+function formatDate(y, m, d) { return `${y}-${pad(m)}-${pad(d)}`; }
+function addDays(dateStr, n) {
+  const d = new Date(dateStr + 'T00:00:00');
+  d.setDate(d.getDate() + n);
+  return formatDate(d.getFullYear(), d.getMonth() + 1, d.getDate());
+}
+
+(function setDateDefaults() {
+  const now = new Date();
+  const curYear = now.getFullYear();
+  const curMonth = now.getMonth(); // 0-indexed
+
+  // Most recent January: always current year (we're at least in Jan)
+  const janYear = curYear;
+  $('jan-start').value = formatDate(janYear, 1, 1);
+  $('jan-end').value = formatDate(janYear, 1, 31);
+
+  // Most recent May: current year if month >= May (4), otherwise previous year
+  const mayYear = curMonth >= 4 ? curYear : curYear - 1;
+  $('may-start').value = formatDate(mayYear, 5, 1);
+  $('may-end').value = formatDate(mayYear, 5, 31);
+})();
+
+// Auto-fill end date to start + 30 days when start changes
+['jan-start', 'may-start'].forEach(id => {
+  $(id).addEventListener('change', () => {
+    const startVal = $(id).value;
+    if (!startVal) return;
+    const endId = id.replace('-start', '-end');
+    $endEl = $(endId);
+    // Only auto-fill if end is empty or was a default/auto-filled value
+    if (!$endEl.dataset.userEdited) {
+      $endEl.value = addDays(startVal, 30);
+    }
+  });
+});
+// Track manual edits to end dates so we don't overwrite them
+['jan-end', 'may-end'].forEach(id => {
+  $(id).addEventListener('change', () => { $(id).dataset.userEdited = '1'; });
+});
+
+// Payoff dropdowns — live recalculate
+['p-cooling', 'p-ac-age', 'p-panel', 'p-ducts'].forEach(id => {
+  $(id).addEventListener('change', updatePayoff);
+});
+
+// Calculate
+$('calculate-btn').addEventListener('click', calculate);
+</script>
+</body>
+</html>
