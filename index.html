@@ -9,6 +9,7 @@
 :root {
   --gas: #e97319; --gas-bg: #fff7ed; --gas-border: #fed7aa;
   --hp: #0d9488; --hp-bg: #f0fdfa; --hp-border: #99f6e4;
+  --hybrid: #6366f1; --hybrid-bg: #eef2ff; --hybrid-border: #c7d2fe;
   --save: #16a34a; --save-bg: #f0fdf4;
   --text: #1e293b; --muted: #64748b; --border: #e2e8f0;
   --bg: #f8fafc; --card: #fff; --radius: 10px;
@@ -79,8 +80,12 @@ details summary:hover { color: var(--text); }
 .summary-card .amount { font-size: 1.6rem; font-weight: 700; }
 .summary-card.gas .amount { color: var(--gas); }
 .summary-card.hp .amount { color: var(--hp); }
+.summary-card.hybrid { background: var(--hybrid-bg); border: 1px solid var(--hybrid-border); }
+.summary-card.hybrid .amount { color: var(--hybrid); }
 .summary-card.savings .amount { color: var(--save); }
 .summary-card .sub { font-size: 0.8rem; color: var(--muted); margin-top: 2px; }
+.summary-card .best-tag { display: inline-block; background: var(--save); color: #fff;
+  font-size: 0.7rem; font-weight: 600; padding: 2px 8px; border-radius: 10px; margin-top: 4px; }
 .verdict { text-align: center; padding: 16px; background: var(--card); border: 1px solid var(--border);
   border-radius: var(--radius); margin-bottom: 20px; font-size: 1.05rem; }
 .verdict strong { font-size: 1.1rem; }
@@ -93,10 +98,11 @@ details summary:hover { color: var(--text); }
   position: relative; border-bottom: 1px solid var(--border); }
 .chart-month { flex: 1; display: flex; gap: 2px; align-items: flex-end; justify-content: center;
   position: relative; height: 100%; }
-.chart-month .bar { width: 14px; border-radius: 3px 3px 0 0; min-height: 1px;
+.chart-month .bar { width: 10px; border-radius: 3px 3px 0 0; min-height: 1px;
   transition: height 0.4s ease; position: relative; }
 .chart-month .bar.gas-bar { background: var(--gas); }
 .chart-month .bar.hp-bar { background: var(--hp); }
+.chart-month .bar.hybrid-bar { background: var(--hybrid); }
 .chart-month .bar:hover::after { content: attr(data-tip); position: absolute; bottom: 100%;
   left: 50%; transform: translateX(-50%); background: var(--text); color: #fff; padding: 3px 8px;
   border-radius: 4px; font-size: 0.72rem; white-space: nowrap; pointer-events: none; }
@@ -149,7 +155,7 @@ details summary:hover { color: var(--text); }
   .details-grid { grid-template-columns: 1fr; }
   .row { flex-direction: column; }
   .field { min-width: 100%; }
-  .chart-month .bar { width: 10px; }
+  .chart-month .bar { width: 7px; }
 }
 </style>
 </head>
@@ -380,21 +386,24 @@ details summary:hover { color: var(--text); }
 
   <!-- Results -->
   <div id="results">
-    <div class="summary">
+    <div class="summary" style="grid-template-columns: 1fr 1fr 1fr">
       <div class="summary-card gas">
-        <div class="label">Gas Furnace</div>
+        <div class="label">Gas Only</div>
         <div class="amount" id="r-gas-cost">-</div>
         <div class="sub" id="r-gas-sub"></div>
+        <div id="r-gas-tag"></div>
       </div>
       <div class="summary-card hp">
-        <div class="label">Heat Pump</div>
+        <div class="label">Heat Pump Only</div>
         <div class="amount" id="r-hp-cost">-</div>
         <div class="sub" id="r-hp-sub"></div>
+        <div id="r-hp-tag"></div>
       </div>
-      <div class="summary-card savings">
-        <div class="label">Annual Savings</div>
-        <div class="amount" id="r-savings">-</div>
-        <div class="sub" id="r-savings-sub"></div>
+      <div class="summary-card hybrid">
+        <div class="label">Hybrid</div>
+        <div class="amount" id="r-hybrid-cost">-</div>
+        <div class="sub" id="r-hybrid-sub"></div>
+        <div id="r-hybrid-tag"></div>
       </div>
     </div>
 
@@ -405,8 +414,9 @@ details summary:hover { color: var(--text); }
       <div class="chart" id="chart"></div>
       <div class="chart-labels" id="chart-labels"></div>
       <div class="chart-legend">
-        <span><span class="dot" style="background:var(--gas)"></span> Gas Furnace</span>
-        <span><span class="dot" style="background:var(--hp)"></span> Heat Pump</span>
+        <span><span class="dot" style="background:var(--gas)"></span> Gas Only</span>
+        <span><span class="dot" style="background:var(--hp)"></span> Heat Pump Only</span>
+        <span><span class="dot" style="background:var(--hybrid)"></span> Hybrid</span>
       </div>
     </div>
 
@@ -576,6 +586,29 @@ function interpolateCOP(curve, temp) {
   return pts[pts.length - 1][1];
 }
 
+// Find outdoor temp where HP cost/BTU == gas cost/BTU (invert the COP curve)
+function findCrossoverTemp(curve, targetCOP) {
+  if (targetCOP >= curve.points[0][1]) return Infinity; // gas always cheaper
+  if (targetCOP <= 1.0) return -Infinity; // HP always cheaper
+
+  // Check between last curve point and aux threshold (COP=1 at auxBelow)
+  const lastPt = curve.points[curve.points.length - 1];
+  if (targetCOP <= lastPt[1]) {
+    const frac = (targetCOP - 1.0) / (lastPt[1] - 1.0);
+    return curve.auxBelow + frac * (lastPt[0] - curve.auxBelow);
+  }
+  // Search through curve segments
+  for (let i = 0; i < curve.points.length - 1; i++) {
+    const [t1, c1] = curve.points[i];
+    const [t2, c2] = curve.points[i + 1];
+    if (targetCOP <= c1 && targetCOP >= c2) {
+      const frac = (targetCOP - c2) / (c1 - c2);
+      return t2 + frac * (t1 - t2);
+    }
+  }
+  return curve.auxBelow;
+}
+
 // Calculate electric energy cost for added kWh (excludes demand charges)
 function calcElectricCost(baselineMonthlyKwh, addedKwh, rateInfo) {
   const energyType = rateInfo.energyType || 'flat';
@@ -681,8 +714,19 @@ async function calculate() {
     const designTemp = calcDesignTemp(annualWeather);
     const copCurve = selectCOPCurve(designTemp);
 
+    // Crossover temperature: where HP $/BTU == gas $/BTU
+    // Gas cost/BTU = gasRate / (furnaceEff * BTU_PER_THERM)
+    // HP cost/BTU = elecRate / (COP * BTU_PER_KWH)
+    // Breakeven COP = elecRate * furnaceEff * BTU_PER_THERM / (gasRate * BTU_PER_KWH)
+    const copBreakeven = (elecRate * furnaceEff * BTU_PER_THERM) / (gasRate * BTU_PER_KWH);
+    const crossoverTemp = findCrossoverTemp(copCurve, copBreakeven);
+
     // Calculate annual costs month-by-month
-    const monthly = MONTHS.map(() => ({ gasCost: 0, hpKwh: 0, hpCost: 0, hdd: 0, days: 0 }));
+    const monthly = MONTHS.map(() => ({
+      gasCost: 0, hpKwh: 0, hpCost: 0,
+      hybridGasCost: 0, hybridHpKwh: 0, hybridCost: 0,
+      hdd: 0, days: 0
+    }));
 
     for (const day of annualWeather) {
       const m = new Date(day.date).getMonth();
@@ -691,18 +735,26 @@ async function calculate() {
       monthly[m].days++;
       if (hdd > 0) {
         const heatBTU = loadFactor * hdd;
-        // Gas furnace cost
         const gasForDay = heatBTU / (furnaceEff * BTU_PER_THERM);
-        monthly[m].gasCost += gasForDay * gasRate;
-        // Heat pump
         const cop = interpolateCOP(copCurve, day.mean);
         const hpKwhDay = heatBTU / (cop * BTU_PER_KWH);
+
+        // Gas-only
+        monthly[m].gasCost += gasForDay * gasRate;
+        // HP-only
         monthly[m].hpKwh += hpKwhDay;
+        // Hybrid: use HP above crossover, gas below
+        if (cop >= copBreakeven) {
+          monthly[m].hybridHpKwh += hpKwhDay;
+        } else {
+          monthly[m].hybridGasCost += gasForDay * gasRate;
+        }
       }
     }
 
-    // Apply electric rate structure per month for HP
+    // Apply electric rate structure per month
     let annualGas = 0, annualHP = 0, annualHPkwh = 0, annualHDD = 0;
+    let annualHybrid = 0, annualHybridHpKwh = 0;
     let netMeteringSavings = 0;
     const hasNetMetering = $('net-metering').checked;
     const solarExcess = hasNetMetering ? (num('solar-excess') || 0) : 0;
@@ -711,22 +763,34 @@ async function calculate() {
       annualGas += monthly[m].gasCost;
       annualHDD += monthly[m].hdd;
       annualHPkwh += monthly[m].hpKwh;
+      annualHybridHpKwh += monthly[m].hybridHpKwh;
 
       let hpKwhToPrice = monthly[m].hpKwh;
+      let hybridHpKwhToPrice = monthly[m].hybridHpKwh;
       if (hasNetMetering && solarExcess > 0) {
         const absorbed = Math.min(solarExcess, hpKwhToPrice);
         hpKwhToPrice -= absorbed;
         netMeteringSavings += absorbed * elecRate;
+        const absorbedH = Math.min(solarExcess, hybridHpKwhToPrice);
+        hybridHpKwhToPrice -= absorbedH;
       }
+      // HP-only electric cost
       monthly[m].hpCost = calcElectricCost(baselineMonthlyKwh, hpKwhToPrice, rateInfo);
-      // Add demand charges for months with HP usage
       if (rateInfo.hasDemand && monthly[m].hpKwh > 0) {
         monthly[m].hpCost += rateInfo.demandRate * rateInfo.hpKw;
       }
       annualHP += monthly[m].hpCost;
+
+      // Hybrid cost = gas portion + HP electric portion
+      const hybridElec = calcElectricCost(baselineMonthlyKwh, hybridHpKwhToPrice, rateInfo);
+      const hybridDemand = (rateInfo.hasDemand && monthly[m].hybridHpKwh > 0)
+        ? rateInfo.demandRate * rateInfo.hpKw : 0;
+      monthly[m].hybridCost = monthly[m].hybridGasCost + hybridElec + hybridDemand;
+      annualHybrid += monthly[m].hybridCost;
     }
 
-    const savings = annualGas - annualHP;
+    const savingsHP = annualGas - annualHP;
+    const savingsHybrid = annualGas - annualHybrid;
 
     // Weighted average COP
     let totalHeatBTU = 0, totalHPkwh = 0;
@@ -743,8 +807,9 @@ async function calculate() {
     // Render
     renderResults({
       loc, gasRate, elecRate, baselineGasDaily, heatingGas, janHDD, janDays,
-      loadFactor, designTemp, copCurve, avgCOP,
-      annualGas, annualHP, savings, annualHPkwh, annualHDD,
+      loadFactor, designTemp, copCurve, avgCOP, copBreakeven, crossoverTemp,
+      annualGas, annualHP, savingsHP, annualHPkwh, annualHDD,
+      annualHybrid, savingsHybrid, annualHybridHpKwh,
       monthly, furnaceEff, rateInfo, yearForData,
       hasNetMetering, netMeteringSavings, solarExcess
     });
@@ -796,41 +861,68 @@ function buildRateInfo(flatRate, baselineKwh) {
 // ============================================================
 function renderResults(r) {
   lastResults = r;
+
+  // Identify best option
+  const costs = [
+    { key: 'gas', cost: r.annualGas },
+    { key: 'hp', cost: r.annualHP },
+    { key: 'hybrid', cost: r.annualHybrid }
+  ];
+  costs.sort((a, b) => a.cost - b.cost);
+  const best = costs[0].key;
+
+  // Summary cards
   $('r-gas-cost').textContent = fmt(r.annualGas);
   $('r-gas-sub').textContent = `${(r.annualGas / r.gasRate).toFixed(0)} therms/yr`;
+  $('r-gas-tag').innerHTML = best === 'gas' ? '<span class="best-tag">Lowest Cost</span>' : '';
+
   $('r-hp-cost').textContent = fmt(r.annualHP);
-  $('r-hp-sub').textContent = `${r.annualHPkwh.toFixed(0)} kWh/yr added`;
-  $('r-savings').textContent = (r.savings >= 0 ? '' : '-') + fmt(Math.abs(r.savings));
-  $('r-savings-sub').textContent = r.savings >= 0 ? 'with heat pump' : 'gas furnace is cheaper';
+  $('r-hp-sub').textContent = `${r.annualHPkwh.toFixed(0)} kWh/yr`;
+  $('r-hp-tag').innerHTML = best === 'hp' ? '<span class="best-tag">Lowest Cost</span>' : '';
+
+  $('r-hybrid-cost').textContent = fmt(r.annualHybrid);
+  const xTemp = isFinite(r.crossoverTemp) ? `HP above ${Math.round(r.crossoverTemp)}°F, gas below` : 'HP only (always cheaper)';
+  $('r-hybrid-sub').textContent = xTemp;
+  $('r-hybrid-tag').innerHTML = best === 'hybrid' ? '<span class="best-tag">Lowest Cost</span>' : '';
 
   // Verdict
   const v = $('r-verdict');
-  if (r.savings > 50) {
-    v.innerHTML = `<strong>A heat pump would save you ~${fmt(r.savings)}/year</strong> on heating costs in ${r.loc.city}, ${r.loc.state}.`;
-  } else if (r.savings > -50) {
-    v.innerHTML = `<strong>It's roughly a wash</strong> &mdash; heating costs are similar for both systems in ${r.loc.city}, ${r.loc.state}. Consider comfort, cooling benefits, and environmental factors.`;
+  const bestSaving = r.annualGas - costs[0].cost;
+  const labels = { gas: 'gas furnace', hp: 'heat pump', hybrid: 'hybrid (HP + gas furnace)' };
+
+  if (best === 'gas' && bestSaving < 50) {
+    v.innerHTML = `<strong>All three options cost roughly the same</strong> in ${r.loc.city}, ${r.loc.state}. Consider cooling needs, comfort, and available rebates.`;
+  } else if (best === 'gas') {
+    v.innerHTML = `<strong>Gas furnace is cheapest for heating</strong> in ${r.loc.city}, ${r.loc.state}. ` +
+      (r.savingsHybrid > 0 ? `A hybrid setup would still save ${fmt(r.savingsHybrid)}/yr vs gas-only, and adds cooling.`
+        : 'A heat pump may still make sense if you need AC — the hybrid approach minimizes operating cost.');
+  } else if (best === 'hybrid') {
+    v.innerHTML = `<strong>A hybrid setup saves ~${fmt(r.savingsHybrid)}/year</strong> in ${r.loc.city}, ${r.loc.state}. ` +
+      `Use the heat pump above ${Math.round(r.crossoverTemp)}°F and the gas furnace below. Also provides cooling.`;
   } else {
-    v.innerHTML = `<strong>A gas furnace is ~${fmt(Math.abs(r.savings))}/year cheaper</strong> for heating in ${r.loc.city}, ${r.loc.state}. A heat pump may still make sense for cooling, comfort, or emissions goals.`;
+    v.innerHTML = `<strong>A heat pump saves ~${fmt(r.savingsHP)}/year</strong> on heating in ${r.loc.city}, ${r.loc.state}.`;
   }
 
-  // Chart
+  // Chart (3 bars)
   const chart = $('chart');
-  const labels = $('chart-labels');
+  const chartLabels = $('chart-labels');
   chart.innerHTML = '';
-  labels.innerHTML = '';
-  const maxCost = Math.max(...r.monthly.map(m => Math.max(m.gasCost, m.hpCost)), 1);
+  chartLabels.innerHTML = '';
+  const maxCost = Math.max(...r.monthly.map(m => Math.max(m.gasCost, m.hpCost, m.hybridCost)), 1);
   for (let m = 0; m < 12; m++) {
     const col = document.createElement('div');
     col.className = 'chart-month';
     const gasH = (r.monthly[m].gasCost / maxCost * 100).toFixed(1);
     const hpH = (r.monthly[m].hpCost / maxCost * 100).toFixed(1);
+    const hybH = (r.monthly[m].hybridCost / maxCost * 100).toFixed(1);
     col.innerHTML =
       `<div class="bar gas-bar" style="height:${gasH}%" data-tip="Gas: ${fmt(r.monthly[m].gasCost)}"></div>` +
-      `<div class="bar hp-bar" style="height:${hpH}%" data-tip="HP: ${fmt(r.monthly[m].hpCost)}"></div>`;
+      `<div class="bar hp-bar" style="height:${hpH}%" data-tip="HP: ${fmt(r.monthly[m].hpCost)}"></div>` +
+      `<div class="bar hybrid-bar" style="height:${hybH}%" data-tip="Hybrid: ${fmt(r.monthly[m].hybridCost)}"></div>`;
     chart.appendChild(col);
     const lbl = document.createElement('span');
     lbl.textContent = MONTHS[m];
-    labels.appendChild(lbl);
+    chartLabels.appendChild(lbl);
   }
 
   // Derived values
@@ -850,12 +942,15 @@ function renderResults(r) {
     ['System type', r.copCurve.name],
     ['Design temperature', `${r.designTemp.toFixed(0)}°F`],
     ['COP at design temp', interpolateCOP(r.copCurve, r.designTemp).toFixed(2)],
+    ['Breakeven COP', r.copBreakeven.toFixed(2)],
+    ['Crossover temperature', isFinite(r.crossoverTemp) ? `${Math.round(r.crossoverTemp)}°F` : 'N/A (HP always cheaper)'],
     ['Weighted avg COP', r.avgCOP.toFixed(2)],
     ['Aux heat (COP=1) below', `${r.copCurve.auxBelow}°F`],
-    ['Annual HP electricity', `${r.annualHPkwh.toFixed(0)} kWh`],
+    ['HP-only annual kWh', `${r.annualHPkwh.toFixed(0)} kWh`],
+    ['Hybrid annual kWh', `${r.annualHybridHpKwh.toFixed(0)} kWh`],
   ];
   if (r.hasNetMetering && r.solarExcess > 0) {
-    hpRows.push(['Solar offset', `${r.solarExcess} kWh/mo exported → saves ~${fmt(r.netMeteringSavings)}/yr`]);
+    hpRows.push(['Solar offset', `${r.solarExcess} kWh/mo exported \u2192 saves ~${fmt(r.netMeteringSavings)}/yr`]);
   }
   const rateParts = [];
   if (r.rateInfo.energyType !== 'flat') rateParts.push(r.rateInfo.energyType.toUpperCase());
@@ -869,8 +964,11 @@ function renderResults(r) {
   // Notes
   $('r-notes').innerHTML = [
     `Weather data from <strong>${r.yearForData}</strong> calendar year (NOAA via Open-Meteo). Actual costs vary year to year.`,
-    'Comparison covers <strong>heating only</strong>. Heat pumps also provide cooling, potentially replacing a separate AC unit.',
-    'Gas service charges (meter fee) remain in both scenarios since gas appliances (water heater, stove, dryer) are assumed to stay.',
+    'Heat pumps also provide cooling, potentially replacing a separate AC unit. Cooling savings are not modeled here.',
+    'Gas service charges (meter fee) remain in all scenarios since gas appliances (water heater, stove, dryer) are assumed to stay.',
+    isFinite(r.crossoverTemp)
+      ? `<strong>Hybrid crossover at ${Math.round(r.crossoverTemp)}°F</strong>: above this outdoor temp the heat pump is cheaper per BTU; below it the gas furnace is cheaper.`
+      : 'The heat pump is cheaper per BTU at all temperatures in this climate/rate combination.',
     `Heating degree days use base ${BASE_TEMP}°F.`,
     'COP values are representative of modern equipment. Actual COP depends on specific model, installation quality, and duct sizing.',
     r.copCurve.auxBelow > -20 ? `Below ${r.copCurve.auxBelow}°F, the model assumes electric resistance backup (COP=1).` : '',
@@ -892,36 +990,56 @@ function updatePayoff() {
   const out = $('payoff-output');
 
   // --- System sizing ---
-  // Peak heating load on design day: loadFactor × (65 - designTemp) BTU over 24h
   const peakBTUhr = r.loadFactor * (BASE_TEMP - r.designTemp) / 24;
   const rawTons = peakBTUhr / 12000;
-  const tons = Math.max(1.5, Math.round(rawTons * 2) / 2); // nearest 0.5, min 1.5
+  const tons = Math.max(1.5, Math.round(rawTons * 2) / 2);
 
   const cooling = $('p-cooling').value;
   const acAge = $('p-ac-age').value;
   const panel = $('p-panel').value;
   const ducts = $('p-ducts').value;
   const isCold = r.copCurve === COP_CURVES.coldClimate;
+  const hasDucts = ducts !== 'none';
 
-  // --- Equipment + installation cost ---
-  let equipLow, equipHigh, equipLabel;
-  if (ducts === 'none') {
+  // =========================================================
+  // Scenario A: Full HP replacement (replaces furnace + AC)
+  // =========================================================
+  let fullEquipLow, fullEquipHigh, fullLabel;
+  if (!hasDucts) {
     const zones = Math.max(2, Math.ceil(tons));
-    equipLow = roundK(zones * 3500);
-    equipHigh = roundK(zones * 5500);
-    equipLabel = `Ductless system (${zones}-zone, ${tons}T)`;
+    fullEquipLow = roundK(zones * 3500);
+    fullEquipHigh = roundK(zones * 5500);
+    fullLabel = `Ductless HP system (${zones}-zone, ${tons}T)`;
   } else {
     const lo = isCold ? 4500 : 3500;
     const hi = isCold ? 7000 : 5500;
-    equipLow = roundK(tons * lo);
-    equipHigh = roundK(tons * hi);
-    equipLabel = `${isCold ? 'Cold-climate' : 'Standard'} ducted HP (${tons}T)`;
+    fullEquipLow = roundK(tons * lo);
+    fullEquipHigh = roundK(tons * hi);
+    fullLabel = `${isCold ? 'Cold-climate' : 'Standard'} ducted HP (${tons}T)`;
   }
 
-  // --- Additional costs ---
+  // =========================================================
+  // Scenario B: Hybrid add-on (keep furnace, add HP for mild
+  //             weather heating + cooling)
+  // =========================================================
+  // Hybrid HP doesn't need cold-climate rating — furnace handles extreme cold.
+  // Cost is similar to a central AC install but with a heat pump unit.
+  let hybridEquipLow, hybridEquipHigh, hybridLabel;
+  if (!hasDucts) {
+    const zones = Math.max(1, Math.ceil(tons));
+    hybridEquipLow = roundK(zones * 2500);
+    hybridEquipHigh = roundK(zones * 4500);
+    hybridLabel = `Ductless HP add-on (${zones}-zone, ${tons}T)`;
+  } else {
+    // Standard heat pump outdoor unit + coil, tied to existing air handler
+    hybridEquipLow = roundK(tons * 2500);
+    hybridEquipHigh = roundK(tons * 4000);
+    hybridLabel = `HP outdoor unit + coil, keep furnace (${tons}T)`;
+  }
+
+  // --- Additional costs (apply to both scenarios) ---
   const addl = [];
   let addlLow = 0, addlHigh = 0;
-
   if (panel === '100') {
     addl.push(['Electrical panel upgrade (100A \u2192 200A)', '$2,000', '$4,000']);
     addlLow += 2000; addlHigh += 4000;
@@ -934,12 +1052,7 @@ function updatePayoff() {
     addlLow += 500; addlHigh += 2500;
   }
 
-  const grossLow = equipLow + addlLow;
-  const grossHigh = equipHigh + addlHigh;
-
-  // --- AC replacement credit ---
-  // If the existing AC/furnace is aging, the homeowner would replace it regardless.
-  // A heat pump replaces both furnace + AC, so part of the cost isn't incremental.
+  // --- AC replacement credit (full replacement only) ---
   let creditLow = 0, creditHigh = 0, creditLabel = '';
   if (cooling === 'central-ac') {
     if (acAge === 'old') {
@@ -951,71 +1064,91 @@ function updatePayoff() {
     }
   }
 
-  const netLow = Math.max(0, grossLow - creditHigh);
-  const netHigh = Math.max(0, grossHigh - creditLow);
+  // Full replacement net
+  const fullGrossLow = fullEquipLow + addlLow;
+  const fullGrossHigh = fullEquipHigh + addlHigh;
+  const fullNetLow = Math.max(0, fullGrossLow - creditHigh);
+  const fullNetHigh = Math.max(0, fullGrossHigh - creditLow);
+  const fullNetMid = (fullNetLow + fullNetHigh) / 2;
 
-  // --- Payback ---
-  const netMid = (netLow + netHigh) / 2;
-  const annualSavings = r.savings;
+  // Hybrid net (no AC credit — you're adding, not replacing)
+  // But if they already have central AC, the hybrid replaces it, so similar credit logic
+  let hybridCreditLow = 0, hybridCreditHigh = 0, hybridCreditLabel = '';
+  if (cooling === 'central-ac') {
+    if (acAge === 'old') {
+      hybridCreditLow = 2500; hybridCreditHigh = 4000;
+      hybridCreditLabel = 'AC you\u2019d replace anyway';
+    } else if (acAge === 'mid') {
+      hybridCreditLow = 1000; hybridCreditHigh = 2500;
+      hybridCreditLabel = 'Prorated AC replacement credit';
+    }
+  }
+  const hybridGrossLow = hybridEquipLow + addlLow;
+  const hybridGrossHigh = hybridEquipHigh + addlHigh;
+  const hybridNetLow = Math.max(0, hybridGrossLow - hybridCreditHigh);
+  const hybridNetHigh = Math.max(0, hybridGrossHigh - hybridCreditLow);
+  const hybridNetMid = (hybridNetLow + hybridNetHigh) / 2;
 
   // --- Render ---
-  let html = '<table class="cost-table">';
+  let html = '';
 
-  // System
-  html += sectionHead('Estimated Installation');
-  html += costRow(equipLabel, fmtRange(equipLow, equipHigh));
-  for (const [label, lo, hi] of addl) {
-    html += costRow(label, `${lo} \u2013 ${hi}`, 'indent');
-  }
-  html += costRow('<strong>Gross cost</strong>', `<strong>${fmtRange(grossLow, grossHigh)}</strong>`);
-
-  // Credits
-  if (creditLabel) {
-    html += sectionHead('Offsets');
-    html += costRow(creditLabel, `\u2212${fmtRange(creditLow, creditHigh)}`, 'indent credit');
-  }
-
-  // Net
-  html += `<tr class="total-row"><td><strong>Net estimated cost</strong></td><td>${fmtRange(netLow, netHigh)}</td></tr>`;
+  // === Full HP Replacement ===
+  html += '<h4 style="margin:0 0 8px;font-size:0.95rem">Scenario A: Full Heat Pump Replacement</h4>';
+  html += '<p style="font-size:0.82rem;color:var(--muted);margin-bottom:8px">Replace furnace with heat pump. HP handles all heating and cooling.</p>';
+  html += '<table class="cost-table">';
+  html += costRow(fullLabel, fmtRange(fullEquipLow, fullEquipHigh));
+  for (const [label, lo, hi] of addl) html += costRow(label, `${lo} \u2013 ${hi}`, 'indent');
+  if (creditLabel) html += costRow(creditLabel, `\u2212${fmtRange(creditLow, creditHigh)}`, 'indent credit');
+  html += `<tr class="total-row"><td><strong>Net cost</strong></td><td>${fmtRange(fullNetLow, fullNetHigh)}</td></tr>`;
   html += '</table>';
+  html += renderPayback(fullNetMid, fullNetLow, fullNetHigh, r.savingsHP, 'vs gas-only');
 
-  // Payback
-  html += '<div style="margin-top:20px">';
+  // === Hybrid Add-on ===
+  html += '<h4 style="margin:24px 0 8px;font-size:0.95rem">Scenario B: Hybrid Add-On</h4>';
+  html += '<p style="font-size:0.82rem;color:var(--muted);margin-bottom:8px">';
+  html += 'Keep furnace, add heat pump for efficient mild-weather heating + cooling.';
+  if (isFinite(r.crossoverTemp)) {
+    html += ` HP runs above ${Math.round(r.crossoverTemp)}°F, furnace below.`;
+  }
+  html += '</p>';
+  html += '<table class="cost-table">';
+  html += costRow(hybridLabel, fmtRange(hybridEquipLow, hybridEquipHigh));
+  for (const [label, lo, hi] of addl) html += costRow(label, `${lo} \u2013 ${hi}`, 'indent');
+  if (hybridCreditLabel) html += costRow(hybridCreditLabel, `\u2212${fmtRange(hybridCreditLow, hybridCreditHigh)}`, 'indent credit');
+  html += `<tr class="total-row"><td><strong>Net cost</strong></td><td>${fmtRange(hybridNetLow, hybridNetHigh)}</td></tr>`;
+  html += '</table>';
+  html += renderPayback(hybridNetMid, hybridNetLow, hybridNetHigh, r.savingsHybrid, 'vs gas-only');
+
+  html += '<p style="font-size:0.8rem;color:var(--muted);margin-top:16px">Check your state/utility for current rebates and incentives — these change frequently and can significantly reduce net cost.</p>';
+
+  out.innerHTML = html;
+}
+
+function renderPayback(netMid, netLow, netHigh, annualSavings, vsLabel) {
+  let html = '<div style="margin-top:12px">';
   if (annualSavings > 25) {
     const yearsLow = Math.max(0, netLow / annualSavings);
     const yearsHigh = Math.max(0, netHigh / annualSavings);
     const yearsMid = netMid / annualSavings;
-    const barPct = Math.min(100, yearsMid / 25 * 100); // 25yr = full bar
+    const barPct = Math.min(100, yearsMid / 25 * 100);
     const barColor = yearsMid <= 7 ? 'var(--save)' : yearsMid <= 15 ? 'var(--gas)' : '#dc2626';
 
-    html += `<div style="font-size:0.9rem;margin-bottom:4px"><strong>Simple payback:</strong> `;
+    html += `<div style="font-size:0.9rem;margin-bottom:4px"><strong>Payback ${vsLabel}:</strong> `;
     if (yearsLow < 1 && yearsHigh < 1) {
-      html += `under 1 year</div>`;
+      html += 'under 1 year';
     } else {
-      html += `${fmtYears(yearsLow)} \u2013 ${fmtYears(yearsHigh)}</div>`;
+      html += `${fmtYears(yearsLow)} \u2013 ${fmtYears(yearsHigh)}`;
     }
+    html += ` <span style="color:var(--muted);font-size:0.82rem">(saving ${fmt(annualSavings)}/yr)</span></div>`;
     html += `<div class="payback-bar"><div class="payback-fill" style="width:${barPct}%;background:${barColor}">${fmtYears(yearsMid)}</div></div>`;
     html += '<div style="display:flex;justify-content:space-between;font-size:0.72rem;color:var(--muted)"><span>0 yr</span><span>25 yr</span></div>';
-
-    if (yearsMid <= 7) {
-      html += '<p style="font-size:0.85rem;margin-top:10px;color:var(--save)">Strong payback — likely worth switching on economics alone.</p>';
-    } else if (yearsMid <= 12) {
-      html += '<p style="font-size:0.85rem;margin-top:10px;color:var(--text)">Moderate payback. Cooling savings, comfort, and available rebates could strengthen the case.</p>';
-    } else if (yearsMid <= 20) {
-      html += '<p style="font-size:0.85rem;margin-top:10px;color:var(--muted)">Long payback on heating savings alone. May still make sense if you also need AC replacement or value electrification.</p>';
-    } else {
-      html += '<p style="font-size:0.85rem;margin-top:10px;color:var(--muted)">Heating economics favor gas here. A heat pump could still make sense for cooling or when paired with solar.</p>';
-    }
   } else if (annualSavings > -25) {
-    html += '<p style="font-size:0.9rem">Operating costs are roughly equal. Payback depends on whether you\'d be replacing aging HVAC equipment anyway and on available local/utility rebates.</p>';
+    html += `<p style="font-size:0.85rem;color:var(--muted)">Operating costs are roughly equal ${vsLabel}. Payback depends on available rebates and cooling value.</p>`;
   } else {
-    html += `<p style="font-size:0.9rem">Gas furnace is <strong>${fmt(Math.abs(annualSavings))}/yr cheaper</strong> to operate for heating. A heat pump may still be worthwhile if you need AC, want to reduce gas dependence, or have access to rebates.</p>`;
+    html += `<p style="font-size:0.85rem;color:var(--muted)">Gas is ${fmt(Math.abs(annualSavings))}/yr cheaper ${vsLabel}. Value comes from cooling and non-economic factors.</p>`;
   }
-
-  html += '<p style="font-size:0.8rem;color:var(--muted);margin-top:10px">Check your state/utility for current rebates and incentives — these change frequently and can significantly reduce net cost.</p>';
   html += '</div>';
-
-  out.innerHTML = html;
+  return html;
 }
 
 function roundK(n) { return Math.round(n / 500) * 500; }
