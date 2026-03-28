@@ -951,16 +951,17 @@ function renderResults(r) {
   $('r-hp-tag').innerHTML = best === 'hp' ? '<span class="best-tag">Lowest Cost</span>' : '';
 
   $('r-hybrid-cost').textContent = fmt(r.annualHybrid);
-  const xTemp = isFinite(r.crossoverTemp) ? `HP above ${Math.round(r.crossoverTemp)}°F, gas below` : 'HP only (always cheaper)';
+  const xTemp = isFinite(r.crossoverTemp) ? `HP above ${Math.round(r.crossoverTemp)}°F, gas below`
+    : r.crossoverTemp === -Infinity ? 'HP only (always cheaper)' : 'Gas always cheaper';
   $('r-hybrid-sub').textContent = xTemp;
   $('r-hybrid-tag').innerHTML = best === 'hybrid' ? '<span class="best-tag">Lowest Cost</span>' : '';
 
   // Verdict
   const v = $('r-verdict');
-  const bestSaving = r.annualGas - costs[0].cost;
+  const spread = costs[2].cost - costs[0].cost;
   const labels = { gas: 'gas furnace', hp: 'heat pump', hybrid: 'hybrid (HP + gas furnace)' };
 
-  if (best === 'gas' && bestSaving < 50) {
+  if (spread < 50) {
     v.innerHTML = `<strong>All three options cost roughly the same</strong> in ${r.loc.city}, ${r.loc.state}. Consider cooling needs, comfort, and available rebates.`;
   } else if (best === 'gas') {
     v.innerHTML = `<strong>Gas furnace is cheapest for heating</strong> in ${r.loc.city}, ${r.loc.state}. ` +
@@ -1015,7 +1016,8 @@ function renderResults(r) {
     ['Design temperature', `${r.designTemp.toFixed(0)}°F`],
     ['COP at design temp', interpolateCOP(r.copCurve, r.designTemp).toFixed(2)],
     ['Breakeven COP', r.copBreakeven.toFixed(2)],
-    ['Crossover temperature', isFinite(r.crossoverTemp) ? `${Math.round(r.crossoverTemp)}°F` : 'N/A (HP always cheaper)'],
+    ['Crossover temperature', isFinite(r.crossoverTemp) ? `${Math.round(r.crossoverTemp)}°F`
+      : r.crossoverTemp === -Infinity ? 'N/A (HP always cheaper)' : 'N/A (gas always cheaper)'],
     ['Weighted avg COP', r.avgCOP.toFixed(2)],
     ['Aux heat (COP=1) below', `${r.copCurve.auxBelow}°F`],
     ['HP-only annual kWh', `${r.annualHPkwh.toFixed(0)} kWh`],
@@ -1040,7 +1042,8 @@ function renderResults(r) {
     'Gas service charges (meter fee) remain in all scenarios since gas appliances (water heater, stove, dryer) are assumed to stay.',
     isFinite(r.crossoverTemp)
       ? `<strong>Hybrid crossover at ${Math.round(r.crossoverTemp)}°F</strong>: above this outdoor temp the heat pump is cheaper per BTU; below it the gas furnace is cheaper.`
-      : 'The heat pump is cheaper per BTU at all temperatures in this climate/rate combination.',
+      : r.crossoverTemp === -Infinity ? 'The heat pump is cheaper per BTU at all temperatures in this climate/rate combination.'
+      : 'The gas furnace is cheaper per BTU at all temperatures in this climate/rate combination.',
     `Heating degree days use base ${BASE_TEMP}°F.`,
     'COP values are representative of modern equipment. Actual COP depends on specific model, installation quality, and duct sizing.',
     r.copCurve.auxBelow > -20 ? `Below ${r.copCurve.auxBelow}°F, the model assumes electric resistance backup (COP=1).` : '',
