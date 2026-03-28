@@ -163,7 +163,7 @@ details summary:hover { color: var(--text); }
 <div class="container">
   <header>
     <h1>Heat Pump vs Gas Furnace Calculator</h1>
-    <p>Enter your ZIP code and two utility bills to see estimated annual heating costs.</p>
+    <p>Enter your ZIP code to auto-fill state-average rates, or use your own utility bills for a precise estimate.</p>
   </header>
 
   <div id="error"></div>
@@ -186,7 +186,7 @@ details summary:hover { color: var(--text); }
   <!-- January Bill -->
   <div class="card">
     <h2><span class="step">2</span> January Utility Bill</h2>
-    <p style="font-size:0.85rem;color:var(--muted);margin-bottom:12px">Your most recent January (peak heating) bill.</p>
+    <p style="font-size:0.85rem;color:var(--muted);margin-bottom:12px">Your most recent January (peak heating) bill. State averages are pre-filled from your ZIP&hairsp;&mdash;&hairsp;replace with actual bill values for a better estimate.</p>
     <div class="row">
       <div class="field">
         <label for="jan-start">Billing Period Start</label>
@@ -231,7 +231,7 @@ details summary:hover { color: var(--text); }
   <!-- May Bill -->
   <div class="card">
     <h2><span class="step">3</span> May Utility Bill</h2>
-    <p style="font-size:0.85rem;color:var(--muted);margin-bottom:12px">Your most recent May (baseline, minimal heating) bill.</p>
+    <p style="font-size:0.85rem;color:var(--muted);margin-bottom:12px">Your most recent May (baseline, minimal heating) bill. State averages pre-filled.</p>
     <div class="row">
       <div class="field">
         <label for="may-start">Billing Period Start</label>
@@ -503,6 +503,38 @@ const COP_CURVES = {
 };
 let lastResults = null; // stored for payoff recalculation
 const BASE_TEMP = 65; // HDD base
+
+// State-average residential energy data (EIA 2024-2026)
+// elecRate $/kWh, gasRate $/therm, elecUse kWh/mo, gasUse therms/mo (annual avg)
+const STATE_ENERGY = {
+  AK:{e:.255,g:1.23,eu:578,gu:128.2},AL:{e:.161,g:1.64,eu:1143,gu:31.9},
+  AR:{e:.124,g:1.90,eu:1048,gu:41.9},AZ:{e:.156,g:1.73,eu:1075,gu:25.6},
+  CA:{e:.303,g:2.29,eu:503,gu:31.7},CO:{e:.164,g:1.00,eu:674,gu:57.4},
+  CT:{e:.283,g:1.56,eu:695,gu:68.9},DC:{e:.237,g:1.47,eu:639,gu:57.8},
+  DE:{e:.165,g:1.65,eu:911,gu:47.0},FL:{e:.159,g:2.28,eu:1104,gu:18.6},
+  GA:{e:.145,g:1.60,eu:1074,gu:59.3},HI:{e:.398,g:4.99,eu:495,gu:18.6},
+  IA:{e:.128,g:0.85,eu:832,gu:49.7},ID:{e:.121,g:0.66,eu:944,gu:60.3},
+  IL:{e:.164,g:0.91,eu:693,gu:74.4},IN:{e:.162,g:0.99,eu:901,gu:61.7},
+  KS:{e:.143,g:1.21,eu:876,gu:52.0},KY:{e:.143,g:1.21,eu:1047,gu:45.3},
+  LA:{e:.125,g:1.60,eu:1202,gu:29.5},MA:{e:.312,g:2.48,eu:570,gu:60.4},
+  MD:{e:.206,g:1.53,eu:929,gu:52.5},ME:{e:.307,g:1.60,eu:550,gu:59.5},
+  MI:{e:.195,g:0.99,eu:618,gu:68.7},MN:{e:.150,g:0.91,eu:712,gu:61.8},
+  MO:{e:.118,g:1.41,eu:1001,gu:50.5},MS:{e:.142,g:1.40,eu:1156,gu:39.3},
+  MT:{e:.129,g:0.85,eu:852,gu:61.5},NC:{e:.137,g:1.72,eu:1015,gu:41.1},
+  ND:{e:.109,g:0.82,eu:1029,gu:63.3},NE:{e:.118,g:0.99,eu:956,gu:51.6},
+  NH:{e:.263,g:1.85,eu:619,gu:51.2},NJ:{e:.231,g:1.39,eu:662,gu:66.9},
+  NM:{e:.147,g:1.07,eu:654,gu:50.0},NV:{e:.140,g:0.96,eu:930,gu:39.4},
+  NY:{e:.284,g:1.55,eu:571,gu:74.9},OH:{e:.176,g:1.08,eu:846,gu:61.0},
+  OK:{e:.126,g:1.07,eu:1079,gu:46.7},OR:{e:.147,g:1.70,eu:882,gu:47.9},
+  PA:{e:.202,g:1.34,eu:817,gu:63.2},RI:{e:.301,g:2.35,eu:567,gu:60.2},
+  SC:{e:.154,g:1.58,eu:1050,gu:34.4},SD:{e:.136,g:0.85,eu:994,gu:49.9},
+  TN:{e:.131,g:1.09,eu:1154,gu:45.8},TX:{e:.157,g:1.86,eu:1096,gu:32.1},
+  UT:{e:.129,g:1.04,eu:774,gu:58.1},VA:{e:.159,g:1.49,eu:1032,gu:49.9},
+  VT:{e:.233,g:1.61,eu:574,gu:62.0},WA:{e:.138,g:1.50,eu:955,gu:56.7},
+  WI:{e:.182,g:1.06,eu:645,gu:56.3},WV:{e:.148,g:1.20,eu:1027,gu:53.8},
+  WY:{e:.129,g:1.05,eu:863,gu:60.1}
+};
+// Seasonal multipliers on gasUse: winter 1.8x, shoulder 1.0x, summer 0.3x (EIA patterns)
 const BTU_PER_THERM = 100_000;
 const BTU_PER_KWH = 3_412;
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -1182,8 +1214,21 @@ function showError(msg) {
   el.classList.toggle('active', !!msg);
 }
 
-// ZIP auto-lookup
+// ZIP auto-lookup + state-average bill defaults
 let zipTimer;
+const userEditedFields = new Set(); // track fields user has manually typed in
+
+// Mark fields as user-edited when they type
+['jan-gas-usage','jan-gas-cost','jan-elec-usage','jan-elec-cost',
+ 'may-gas-usage','may-gas-cost','may-elec-usage','may-elec-cost'].forEach(id => {
+  $(id).addEventListener('input', () => userEditedFields.add(id));
+});
+
+function setDefault(id, val) {
+  if (userEditedFields.has(id)) return; // don't overwrite manual input
+  $(id).value = val;
+}
+
 $('zip').addEventListener('input', () => {
   clearTimeout(zipTimer);
   const val = $('zip').value.trim();
@@ -1193,6 +1238,7 @@ $('zip').addEventListener('input', () => {
         const loc = await lookupZip(val);
         $('zip-info').textContent = `${loc.city}, ${loc.state}`;
         $('zip-info').style.color = 'var(--text)';
+        populateStateDefaults(loc.state);
       } catch {
         $('zip-info').textContent = 'ZIP not found';
         $('zip-info').style.color = '#dc2626';
@@ -1202,6 +1248,48 @@ $('zip').addEventListener('input', () => {
     $('zip-info').textContent = '';
   }
 });
+
+function populateStateDefaults(stateCode) {
+  // Normalize: zippopotam returns full state name or abbreviation depending on region
+  const code = stateCode.length === 2 ? stateCode.toUpperCase()
+    : STATE_ABBREV[stateCode] || null;
+  const d = code && STATE_ENERGY[code];
+  if (!d) return;
+
+  // Seasonal gas: Jan = winter (1.8x avg), May = summer (0.3x avg)
+  const janGas = +(d.gu * 1.8).toFixed(1);
+  const mayGas = +(d.gu * 0.3).toFixed(1);
+
+  // Volumetric charges = usage × rate
+  const janGasCost = +(janGas * d.g).toFixed(2);
+  const mayGasCost = +(mayGas * d.g).toFixed(2);
+  const janElecCost = +(d.eu * d.e).toFixed(2);
+  const mayElecCost = +(d.eu * d.e).toFixed(2);
+
+  setDefault('jan-gas-usage', janGas);
+  setDefault('jan-gas-cost', janGasCost);
+  setDefault('jan-elec-usage', d.eu);
+  setDefault('jan-elec-cost', janElecCost);
+  setDefault('may-gas-usage', mayGas);
+  setDefault('may-gas-cost', mayGasCost);
+  setDefault('may-elec-usage', d.eu);
+  setDefault('may-elec-cost', mayElecCost);
+}
+
+// Full state name → abbreviation (zippopotam returns full names)
+const STATE_ABBREV = {
+  'Alabama':'AL','Alaska':'AK','Arizona':'AZ','Arkansas':'AR','California':'CA',
+  'Colorado':'CO','Connecticut':'CT','Delaware':'DE','District of Columbia':'DC',
+  'Florida':'FL','Georgia':'GA','Hawaii':'HI','Idaho':'ID','Illinois':'IL',
+  'Indiana':'IN','Iowa':'IA','Kansas':'KS','Kentucky':'KY','Louisiana':'LA',
+  'Maine':'ME','Maryland':'MD','Massachusetts':'MA','Michigan':'MI','Minnesota':'MN',
+  'Mississippi':'MS','Missouri':'MO','Montana':'MT','Nebraska':'NE','Nevada':'NV',
+  'New Hampshire':'NH','New Jersey':'NJ','New Mexico':'NM','New York':'NY',
+  'North Carolina':'NC','North Dakota':'ND','Ohio':'OH','Oklahoma':'OK','Oregon':'OR',
+  'Pennsylvania':'PA','Rhode Island':'RI','South Carolina':'SC','South Dakota':'SD',
+  'Tennessee':'TN','Texas':'TX','Utah':'UT','Vermont':'VT','Virginia':'VA',
+  'Washington':'WA','West Virginia':'WV','Wisconsin':'WI','Wyoming':'WY'
+};
 
 // Energy rate radio toggle
 document.querySelectorAll('input[name="energy-rate"]').forEach(radio => {
