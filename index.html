@@ -383,7 +383,7 @@ details summary:hover { color: var(--text); }
 
   <button id="calculate-btn">Calculate Annual Heating Costs</button>
 
-  <div id="loading"><div class="spinner"></div><div>Fetching weather data...</div></div>
+  <div id="loading"><div class="spinner"></div><div>Fetching 5 years of weather data...</div></div>
 
   <!-- Results -->
   <div id="results">
@@ -411,7 +411,7 @@ details summary:hover { color: var(--text); }
     <div class="verdict" id="r-verdict"></div>
 
     <div class="chart-container">
-      <h3>Monthly Heating Cost Comparison</h3>
+      <h3>Monthly Heating Cost Comparison (5-Year Average)</h3>
       <div class="chart" id="chart"></div>
       <div class="chart-labels" id="chart-labels"></div>
       <div class="chart-legend">
@@ -747,53 +747,91 @@ async function calculate() {
     // Load factor: BTU of heat delivered per degree-day
     const loadFactor = heatingGas * BTU_PER_THERM * furnaceEff / janHDD;
 
-    // Fetch full year of weather data (previous complete calendar year)
-    const yearForData = new Date(janEnd).getFullYear() - 1;
-    const annualWeather = await fetchWeather(loc.lat, loc.lon, `${yearForData}-01-01`, `${yearForData}-12-31`);
+    // Fetch 5 years of weather data for robust averaging + extrema
+    const endYear = new Date(janEnd).getFullYear() - 1;
+    const startYear = endYear - 4;
+    const numYears = endYear - startYear + 1;
+    const allWeather = await fetchWeather(loc.lat, loc.lon, `${startYear}-01-01`, `${endYear}-12-31`);
 
-    // Design temp and COP curve
-    const designTemp = calcDesignTemp(annualWeather);
+    // Design temp from pooled 5-year data (captures worst cold snaps for sizing)
+    const designTemp = calcDesignTemp(allWeather);
     const copCurve = selectCOPCurve(designTemp);
 
     // Crossover temperature: where HP $/BTU == gas $/BTU
-    // Gas cost/BTU = gasRate / (furnaceEff * BTU_PER_THERM)
-    // HP cost/BTU = elecRate / (COP * BTU_PER_KWH)
-    // Breakeven COP = elecRate * furnaceEff * BTU_PER_THERM / (gasRate * BTU_PER_KWH)
     const copBreakeven = (elecRate * furnaceEff * BTU_PER_THERM) / (gasRate * BTU_PER_KWH);
     const crossoverTemp = findCrossoverTemp(copCurve, copBreakeven);
 
-    // Calculate annual costs month-by-month
+    // Accumulate costs across all years, then average.
+    // Also track per-year HDD and costs for worst-year analysis.
     const monthly = MONTHS.map(() => ({
       gasCost: 0, hpKwh: 0, hpCost: 0,
       hybridGasCost: 0, hybridHpKwh: 0, hybridCost: 0,
       hdd: 0, days: 0
     }));
 
-    for (const day of annualWeather) {
+    const perYear = {}; // { year: { hdd, gasCost, hpKwh, hybridGasCost, hybridHpKwh } }
+    let totalHeatBTU = 0, totalHPkwh = 0; // for weighted avg COP
+
+    for (const day of allWeather) {
+      const yr = new Date(day.date).getFullYear();
       const m = new Date(day.date).getMonth();
       const hdd = Math.max(0, BASE_TEMP - day.mean);
+
+      if (!perYear[yr]) perYear[yr] = { hdd: 0, gasCost: 0, hpKwh: 0, hybridGasCost: 0, hybridHpKwh: 0 };
+
       monthly[m].hdd += hdd;
       monthly[m].days++;
+      perYear[yr].hdd += hdd;
+
       if (hdd > 0) {
         const heatBTU = loadFactor * hdd;
         const gasForDay = heatBTU / (furnaceEff * BTU_PER_THERM);
+        const gasCostDay = gasForDay * gasRate;
         const cop = interpolateCOP(copCurve, day.mean);
         const hpKwhDay = heatBTU / (cop * BTU_PER_KWH);
 
-        // Gas-only
-        monthly[m].gasCost += gasForDay * gasRate;
-        // HP-only
+        // Accumulate monthly totals (will be divided by numYears)
+        monthly[m].gasCost += gasCostDay;
         monthly[m].hpKwh += hpKwhDay;
-        // Hybrid: use HP above crossover, gas below
         if (cop >= copBreakeven) {
           monthly[m].hybridHpKwh += hpKwhDay;
         } else {
-          monthly[m].hybridGasCost += gasForDay * gasRate;
+          monthly[m].hybridGasCost += gasCostDay;
         }
+
+        // Per-year totals
+        perYear[yr].gasCost += gasCostDay;
+        perYear[yr].hpKwh += hpKwhDay;
+        if (cop >= copBreakeven) {
+          perYear[yr].hybridHpKwh += hpKwhDay;
+        } else {
+          perYear[yr].hybridGasCost += gasCostDay;
+        }
+
+        // Weighted COP accumulators
+        totalHeatBTU += heatBTU;
+        totalHPkwh += hpKwhDay;
       }
     }
 
-    // Apply electric rate structure per month
+    // Average monthly values over the multi-year window
+    for (let m = 0; m < 12; m++) {
+      monthly[m].gasCost /= numYears;
+      monthly[m].hpKwh /= numYears;
+      monthly[m].hybridGasCost /= numYears;
+      monthly[m].hybridHpKwh /= numYears;
+      monthly[m].hdd /= numYears;
+    }
+
+    // Per-year HDD stats
+    const yearHDDs = Object.values(perYear).map(y => y.hdd);
+    const avgHDD = yearHDDs.reduce((s, v) => s + v, 0) / numYears;
+    const worstHDD = Math.max(...yearHDDs);
+    const mildestHDD = Math.min(...yearHDDs);
+    const worstYear = Object.entries(perYear).find(([, v]) => v.hdd === worstHDD)?.[0];
+    const hddScale = worstHDD / avgHDD; // for scaling avg costs to worst-year
+
+    // Apply electric rate structure to averaged monthly values
     let annualGas = 0, annualHP = 0, annualHPkwh = 0, annualHDD = 0;
     let annualHybrid = 0, annualHybridHpKwh = 0;
     let netMeteringSavings = 0;
@@ -815,14 +853,12 @@ async function calculate() {
         const absorbedH = Math.min(solarExcess, hybridHpKwhToPrice);
         hybridHpKwhToPrice -= absorbedH;
       }
-      // HP-only electric cost
       monthly[m].hpCost = calcElectricCost(baselineMonthlyKwh, hpKwhToPrice, rateInfo);
       if (rateInfo.hasDemand && monthly[m].hpKwh > 0) {
         monthly[m].hpCost += rateInfo.demandRate * rateInfo.hpKw;
       }
       annualHP += monthly[m].hpCost;
 
-      // Hybrid cost = gas portion + HP electric portion
       const hybridElec = calcElectricCost(baselineMonthlyKwh, hybridHpKwhToPrice, rateInfo);
       const hybridDemand = (rateInfo.hasDemand && monthly[m].hybridHpKwh > 0)
         ? rateInfo.demandRate * rateInfo.hpKw : 0;
@@ -832,17 +868,6 @@ async function calculate() {
 
     const savingsHP = annualGas - annualHP;
     const savingsHybrid = annualGas - annualHybrid;
-
-    // Weighted average COP
-    let totalHeatBTU = 0, totalHPkwh = 0;
-    for (const day of annualWeather) {
-      const hdd = Math.max(0, BASE_TEMP - day.mean);
-      if (hdd > 0) {
-        const heatBTU = loadFactor * hdd;
-        totalHeatBTU += heatBTU;
-        totalHPkwh += heatBTU / (interpolateCOP(copCurve, day.mean) * BTU_PER_KWH);
-      }
-    }
     const avgCOP = totalHeatBTU / (totalHPkwh * BTU_PER_KWH);
 
     // Render
@@ -851,7 +876,9 @@ async function calculate() {
       loadFactor, designTemp, copCurve, avgCOP, copBreakeven, crossoverTemp,
       annualGas, annualHP, savingsHP, annualHPkwh, annualHDD,
       annualHybrid, savingsHybrid, annualHybridHpKwh,
-      monthly, furnaceEff, rateInfo, yearForData,
+      monthly, furnaceEff, rateInfo,
+      startYear, endYear, numYears,
+      avgHDD, worstHDD, mildestHDD, worstYear, hddScale,
       hasNetMetering, netMeteringSavings, solarExcess
     });
 
@@ -912,13 +939,15 @@ function renderResults(r) {
   costs.sort((a, b) => a.cost - b.cost);
   const best = costs[0].key;
 
-  // Summary cards
+  // Summary cards (average year)
+  const avgLabel = `avg/yr (${r.startYear}\u2013${r.endYear})`;
+
   $('r-gas-cost').textContent = fmt(r.annualGas);
-  $('r-gas-sub').textContent = `${(r.annualGas / r.gasRate).toFixed(0)} therms/yr`;
+  $('r-gas-sub').textContent = `${(r.annualGas / r.gasRate).toFixed(0)} therms, ${avgLabel}`;
   $('r-gas-tag').innerHTML = best === 'gas' ? '<span class="best-tag">Lowest Cost</span>' : '';
 
   $('r-hp-cost').textContent = fmt(r.annualHP);
-  $('r-hp-sub').textContent = `${r.annualHPkwh.toFixed(0)} kWh/yr`;
+  $('r-hp-sub').textContent = `${r.annualHPkwh.toFixed(0)} kWh, ${avgLabel}`;
   $('r-hp-tag').innerHTML = best === 'hp' ? '<span class="best-tag">Lowest Cost</span>' : '';
 
   $('r-hybrid-cost').textContent = fmt(r.annualHybrid);
@@ -974,7 +1003,9 @@ function renderResults(r) {
     ['Jan heating gas', `${r.heatingGas.toFixed(1)} therms (${r.janDays} days)`],
     ['Jan billing period HDD', r.janHDD.toFixed(0)],
     ['Home load factor', `${(r.loadFactor / 1000).toFixed(1)}k BTU/degree-day`],
-    [`Annual HDD (${r.yearForData})`, r.annualHDD.toFixed(0)],
+    [`Annual HDD (${r.startYear}\u2013${r.endYear} avg)`, r.avgHDD.toFixed(0)],
+    ['Worst year HDD', `${r.worstHDD.toFixed(0)} (${r.worstYear})`],
+    ['Mildest year HDD', r.mildestHDD.toFixed(0)],
     ['Furnace efficiency', `${(r.furnaceEff * 100).toFixed(0)}% AFUE`],
   ].map(([k,v]) => `<div class="detail-row"><span>${k}</span><span class="val">${v}</span></div>`).join('');
 
@@ -1004,7 +1035,7 @@ function renderResults(r) {
 
   // Notes
   $('r-notes').innerHTML = [
-    `Weather data from <strong>${r.yearForData}</strong> calendar year (NOAA via Open-Meteo). Actual costs vary year to year.`,
+    `Costs averaged over <strong>${r.numYears} years</strong> of weather (${r.startYear}\u2013${r.endYear}, NOAA via Open-Meteo). In a harsh winter (${r.worstYear}, ${r.worstHDD.toFixed(0)} HDD), costs would be ~${Math.round((r.hddScale - 1) * 100)}% higher than the average shown.`,
     'Heat pumps also provide cooling, potentially replacing a separate AC unit. Cooling savings are not modeled here.',
     'Gas service charges (meter fee) remain in all scenarios since gas appliances (water heater, stove, dryer) are assumed to stay.',
     isFinite(r.crossoverTemp)
