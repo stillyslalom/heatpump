@@ -592,13 +592,12 @@ function toTherms(val, unit) {
 function calcDesignTemp(days) {
   // 5th percentile of daily lows during heating season (Oct-Mar)
   // Represents roughly the coldest week, not a single outlier night
-  const heatingLows = days
-    .filter(d => { const m = new Date(d.date).getMonth(); return m >= 9 || m <= 2; })
-    .map(d => d.min)
-    .sort((a, b) => a - b);
-  if (heatingLows.length === 0) return 30; // mild climate fallback
-  const idx = Math.max(0, Math.floor(heatingLows.length * 0.05));
-  return heatingLows[idx];
+  const heatingDays = days
+    .filter(d => { const m = new Date(d.date).getMonth(); return m >= 9 || m <= 2; });
+  if (heatingDays.length === 0) return 30;
+  heatingDays.sort((a, b) => a.min - b.min);
+  const idx = Math.max(0, Math.floor(heatingDays.length * 0.05));
+  return heatingDays[idx].min;
 }
 
 function selectCOPCurve(designTemp) {
@@ -774,6 +773,7 @@ async function calculate() {
 
     for (const day of allWeather) {
       const yr = new Date(day.date).getFullYear();
+      if (yr < startYear || yr > endYear) continue;
       const m = new Date(day.date).getMonth();
       const hdd = Math.max(0, BASE_TEMP - day.mean);
 
@@ -829,6 +829,7 @@ async function calculate() {
     const worstHDD = Math.max(...yearHDDs);
     const mildestHDD = Math.min(...yearHDDs);
     const worstYear = Object.entries(perYear).find(([, v]) => v.hdd === worstHDD)?.[0];
+    const mildestYear = Object.entries(perYear).find(([, v]) => v.hdd === mildestHDD)?.[0];
     const hddScale = worstHDD / avgHDD; // for scaling avg costs to worst-year
 
     // Apply electric rate structure to averaged monthly values
@@ -878,7 +879,7 @@ async function calculate() {
       annualHybrid, savingsHybrid, annualHybridHpKwh,
       monthly, furnaceEff, rateInfo,
       startYear, endYear, numYears,
-      avgHDD, worstHDD, mildestHDD, worstYear, hddScale,
+      avgHDD, worstHDD, mildestHDD, worstYear, mildestYear, hddScale,
       hasNetMetering, netMeteringSavings, solarExcess
     });
 
@@ -1006,7 +1007,7 @@ function renderResults(r) {
     ['Home load factor', `${(r.loadFactor / 1000).toFixed(1)}k BTU/degree-day`],
     [`Annual HDD (${r.startYear}\u2013${r.endYear} avg)`, r.avgHDD.toFixed(0)],
     ['Worst year HDD', `${r.worstHDD.toFixed(0)} (${r.worstYear})`],
-    ['Mildest year HDD', r.mildestHDD.toFixed(0)],
+    ['Mildest year HDD', `${r.mildestHDD.toFixed(0)} (${r.mildestYear})`],
     ['Furnace efficiency', `${(r.furnaceEff * 100).toFixed(0)}% AFUE`],
   ].map(([k,v]) => `<div class="detail-row"><span>${k}</span><span class="val">${v}</span></div>`).join('');
 
